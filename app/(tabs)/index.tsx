@@ -1,6 +1,7 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useInventory } from '@/context/inventory';
 
 type ProfileType = 'Baby' | 'Allergy';
 
@@ -14,6 +15,7 @@ export default function TabOneScreen() {
   const [scanned, setScanned] = useState(false);
   const [profile, setProfile] = useState<ProfileType>('Baby');
   const [loadingAI, setLoadingAI] = useState(false);
+  const { addItem } = useInventory();
   
   const isProcessing = useRef(false);
 
@@ -28,7 +30,7 @@ export default function TabOneScreen() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': 'REPLACE WITH API KEY!!!!!', // Replace with your sk-ant-... key
+        'x-api-key': 'REPLACE_ME!!!!!!!', // Replace with your sk-ant-... key
         'anthropic-version': '2023-06-01',
         'dangerouslyAllowBrowser': 'true' // Note: Only works in some environments
       },
@@ -77,6 +79,16 @@ export default function TabOneScreen() {
     setScanned(false);
   };
 
+  const addToInventoryAndReset = (name: string, barcode: string) => {
+    const added = addItem({ name, barcode });
+    Alert.alert(
+      added ? 'Added to Inventory' : 'Already in Inventory',
+      `${name}`,
+      [{ text: 'OK', onPress: resetScanner }]
+    );
+  };
+
+
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (isProcessing.current || scanned) return;
 
@@ -99,18 +111,22 @@ export default function TabOneScreen() {
               "⚠️ Forbidden Ingredients",
               `Product: ${productName}\n\nDetected: ${matched.join(', ')}`,
               [
-                { text: "Cancel", style: "cancel", onPress: resetScanner },
-                { 
-                  text: "Find Alternative", 
-                  onPress: () => fetchAIRecommendation(productName, matched.join(', ')) 
-                }
+                { text: "Don’t Add", style: "cancel", onPress: resetScanner },
+                { text: "Add to Inventory", onPress: () => addToInventoryAndReset(productName, data) },
+                { text: "Find Alternative", onPress: () => fetchAIRecommendation(productName, matched.join(', ')) },
               ]
             );
           } else {
             // Safe
-            Alert.alert("✅ Safe", `${productName} is safe for ${profile} mode.`, [
-              { text: "OK", onPress: resetScanner }
-            ]);
+            Alert.alert(
+              "✅ Safe",
+              `${productName} is safe for ${profile} mode.`,
+              [
+                { text: "Add to Inventory", onPress: () => addToInventoryAndReset(productName, data) },
+                { text: "OK", onPress: resetScanner },
+              ]
+            );
+
           }
         } else {
           Alert.alert("Not Found", "Barcode not recognized.", [{ text: "Retry", onPress: resetScanner }]);
