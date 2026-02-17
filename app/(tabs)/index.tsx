@@ -30,7 +30,7 @@ export default function TabOneScreen() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': 'REPLACE_ME!!!!!!!', // Replace with your sk-ant-... key
+        'x-api-key': 'REPLACE_ME', // Replace with your sk-ant-... key
         'anthropic-version': '2023-06-01',
         'dangerouslyAllowBrowser': 'true' // Note: Only works in some environments
       },
