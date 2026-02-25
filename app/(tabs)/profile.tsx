@@ -3,27 +3,26 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
-// 预设的可选标签
+
 const AVAILABLE_ALLERGENS = ['peanuts', 'milk', 'egg', 'gluten', 'soy', 'tree nuts', 'fish'];
 const AVAILABLE_DIETS = ['vegan', 'vegetarian', 'keto', 'paleo', 'halal'];
 
 export default function ProfileScreen() {
-  // 🌟 从我们的“全局数据大脑”中引入数据和方法！
+
   const { profile, updateProfileLocally, syncToJac, logout, isLoading } = useProfile();
-  
-  // 防止用户疯狂点击保存按钮
+
   const [isSaving, setIsSaving] = useState(false);
 
-  // 切换标签的通用函数
+
   const toggleItem = (category: 'allergens' | 'dietary_preferences', item: string) => {
     const currentList = profile[category] || [];
     const isSelected = currentList.includes(item);
     
     const newList = isSelected 
-      ? currentList.filter(i => i !== item) // 如果已经选了，就移除
-      : [...currentList, item];             // 如果没选，就加上
+      ? currentList.filter(i => i !== item) 
+      : [...currentList, item];             
 
-    // 更新到全局状态
+
     updateProfileLocally({ [category]: newList });
   };
 

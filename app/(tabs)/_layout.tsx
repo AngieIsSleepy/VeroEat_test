@@ -5,7 +5,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-// 🌟 自定义中间凸起的相机按钮
+
 const CustomTabBarButton = ({ children, onPress }: any) => (
   <TouchableOpacity
     style={styles.customButtonContainer}
@@ -24,14 +24,14 @@ export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#3B82F6', // 选中时的蓝色
-        tabBarInactiveTintColor: '#9CA3AF', // 未选中时的灰色
+        tabBarActiveTintColor: '#3B82F6',
+        tabBarInactiveTintColor: '#9CA3AF', 
         headerShown: false,
         tabBarButton: HapticTab,
-        tabBarStyle: styles.tabBar, // 应用自定义导航栏样式
+        tabBarStyle: styles.tabBar,
       }}>
       
-      {/* 1. 首页 (Home) */}
+
       <Tabs.Screen
         name="index"
         options={{
@@ -40,7 +40,7 @@ export default function TabLayout() {
         }}
       />
       
-      {/* 2. 库存 (Inventory) */}
+
       <Tabs.Screen
         name="inventory"
         options={{
@@ -49,29 +49,28 @@ export default function TabLayout() {
         }}
       />
       
-      {/* 3. 中间凸起的扫码按钮 (Scanner) */}
       <Tabs.Screen
         name="scanner"
         options={{
-          title: '', // 中间按钮通常不需要文字
+          title: '', 
           tabBarIcon: () => <IconSymbol size={32} name="camera.fill" color="#fff" />,
           tabBarButton: (props) => <CustomTabBarButton {...props} />,
         }}
       />
       
-      {/* 4. 新增的群组 (Group) */}
+
       <Tabs.Screen
         name="group"
         options={{
           title: 'Group',
-          // 如果 icon 报错，可以换成 person.fill 或者其他内置 icon
+
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.3.fill" color={color} />,
         }}
       />
       
-      {/* 5. 个人资料 (Profile) */}
+
       <Tabs.Screen
-        name="Profile"
+        name="profile"
         options={{
           title: 'Profile',
           tabBarIcon: ({ color }) => <IconSymbol size={24} name="paperplane.fill" color={color} />,
@@ -81,7 +80,7 @@ export default function TabLayout() {
   );
 }
 
-// 💅 导航栏的精美样式
+
 const styles = StyleSheet.create({
   tabBar: {
     position: 'absolute',
@@ -89,18 +88,18 @@ const styles = StyleSheet.create({
     left: 20,
     right: 20,
     backgroundColor: '#ffffff',
-    borderRadius: 30, // 圆角悬浮效果
+    borderRadius: 30, 
     height: 70,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 5,
-    paddingBottom: 0, // 重置默认的底部 padding
-    borderTopWidth: 0, // 去掉顶部的灰线
+    paddingBottom: 0, 
+    borderTopWidth: 0,
   },
   customButtonContainer: {
-    top: -25, // 让按钮向上凸出
+    top: -25, 
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -108,7 +107,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: '#3B82F6', // 你的主题蓝
+    backgroundColor: '#3B82F6', 
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#3B82F6',

@@ -1,4 +1,4 @@
-import { useProfile } from '@/context/ProfileContext'; // 🌟 引入我们写的全局数据大脑
+import { useProfile } from '@/context/ProfileContext';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';

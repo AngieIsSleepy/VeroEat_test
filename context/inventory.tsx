@@ -2,10 +2,10 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
 
 export type InventoryItem = {
-  id: string;        // barcode
+  id: string;  
   name: string;
   barcode: string;
-  imageUrl?: string; // 先不用
+  imageUrl?: string; 
   addedAt: number;
 };
 
