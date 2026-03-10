@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Alert } from 'react-native';
 
+
 interface ProfileData {
   name: string;
   location: string;
@@ -24,6 +25,8 @@ const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 const JAC_SERVER_URL = 'http://100.64.0.113:8000';
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
+  const [profiles, setProfiles] = useState<string[]>([]);
+
   const [profile, setProfile] = useState<ProfileData>({
     name: '',
     location: '',
@@ -117,11 +120,37 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // const login = async (username: string) => {
+  //   setIsLoading(true);
+  //   try {
+  //     await AsyncStorage.setItem('currentUser', username);
+  //     await fetchProfileFromJac(username);
+  //     setIsLoading(false);
+  //     return true;
+  //   } catch (e) {
+  //     setIsLoading(false);
+  //     return false;
+  //   }
+  // };
+
   const login = async (username: string) => {
     setIsLoading(true);
+
     try {
-      await AsyncStorage.setItem('currentUser', username);
+      const savedProfiles = await AsyncStorage.getItem("profiles");
+      const profileList = savedProfiles ? JSON.parse(savedProfiles) : [];
+
+      if (!profileList.includes(username)) {
+        profileList.push(username);
+        await AsyncStorage.setItem("profiles", JSON.stringify(profileList));
+      }
+
+      setProfiles(profileList);
+
+      await AsyncStorage.setItem("currentUser", username);
+
       await fetchProfileFromJac(username);
+
       setIsLoading(false);
       return true;
     } catch (e) {

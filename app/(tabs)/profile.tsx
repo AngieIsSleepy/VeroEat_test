@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 
+
 const AVAILABLE_ALLERGENS = [
   "peanuts",
   "milk",
@@ -26,6 +27,8 @@ const AVAILABLE_ALLERGENS = [
 const AVAILABLE_DIETS = ["vegan", "vegetarian", "keto", "paleo", "halal"];
 
 export default function ProfileScreen() {
+  // const { profile, logout, login } = useProfile();
+
   const { profile, updateProfileLocally, syncToJac, logout, isLoading } =
     useProfile();
 
@@ -151,6 +154,13 @@ export default function ProfileScreen() {
         <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.switchButton}
+          onPress={handleLogout}
+        >
+          <Text style={styles.switchButtonText}>Switch Profile</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -235,4 +245,18 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoutButtonText: { color: "#EF4444", fontSize: 16, fontWeight: "bold" },
+
+  switchButton: {
+      backgroundColor: "#E5E7EB",
+      padding: 16,
+      borderRadius: 12,
+      alignItems: "center",
+      marginTop: 10,
+  },
+
+  switchButtonText: {
+      color: "#374151",
+      fontSize: 16,
+      fontWeight: "bold",
+  },
 });
