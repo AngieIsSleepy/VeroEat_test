@@ -1,50 +1,59 @@
-import { useProfile } from '@/context/ProfileContext';
-import { router } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { useProfile } from "@/context/ProfileContext";
+import { router } from "expo-router";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
 export default function LoginScreen() {
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
-  
 
   const { login } = useProfile();
 
   const handleLogin = async () => {
-
     const cleanName = username.trim();
 
     if (!cleanName) {
-      Alert.alert('Error', 'Please enter your name.');
+      Alert.alert("Error", "Please enter your name.");
       return;
     }
 
     setIsLoggingIn(true);
-    
+
     try {
       const success = await login(cleanName);
-      
-      if (success) {
 
-        router.replace('/(tabs)');
+      if (success) {
+        router.replace("/(tabs)");
       } else {
-        Alert.alert('Error', 'Failed to connect to the server.');
+        Alert.alert("Error", "Failed to connect to the server.");
       }
     } catch (error) {
-      Alert.alert('Error', 'Something went wrong.');
+      Alert.alert("Error", "Something went wrong.");
     } finally {
       setIsLoggingIn(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView 
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
       <View style={styles.formContainer}>
         <Text style={styles.title}>Welcome to VeroEat 👋</Text>
-        <Text style={styles.subtitle}>Enter your name to log in or create a new profile.</Text>
+        <Text style={styles.subtitle}>
+          Enter your name to log in or create a new profile.
+        </Text>
 
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Your Name</Text>
@@ -58,8 +67,8 @@ export default function LoginScreen() {
           />
         </View>
 
-        <TouchableOpacity 
-          style={[styles.loginButton, isLoggingIn && { opacity: 0.7 }]} 
+        <TouchableOpacity
+          style={[styles.loginButton, isLoggingIn && { opacity: 0.7 }]}
           onPress={handleLogin}
           disabled={isLoggingIn}
         >
@@ -77,21 +86,21 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F9FAFB',
-    justifyContent: 'center',
+    backgroundColor: "#F9FAFB",
+    justifyContent: "center",
   },
   formContainer: {
     paddingHorizontal: 30,
   },
   title: {
     fontSize: 32,
-    fontWeight: 'bold',
-    color: '#111827',
+    fontWeight: "bold",
+    color: "#111827",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: '#6B7280',
+    color: "#6B7280",
     marginBottom: 40,
     lineHeight: 24,
   },
@@ -100,34 +109,34 @@ const styles = StyleSheet.create({
   },
   label: {
     fontSize: 14,
-    fontWeight: '600',
-    color: '#374151',
+    fontWeight: "600",
+    color: "#374151",
     marginBottom: 8,
   },
   input: {
-    backgroundColor: '#FFFFFF',
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
-    borderColor: '#D1D5DB',
+    borderColor: "#D1D5DB",
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#111827',
+    color: "#111827",
   },
   loginButton: {
-    backgroundColor: '#3B82F6',
+    backgroundColor: "#3B82F6",
     padding: 18,
     borderRadius: 12,
-    alignItems: 'center',
+    alignItems: "center",
     marginTop: 10,
-    shadowColor: '#3B82F6',
+    shadowColor: "#3B82F6",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 4,
   },
   loginButtonText: {
-    color: '#FFFFFF',
+    color: "#FFFFFF",
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
 });

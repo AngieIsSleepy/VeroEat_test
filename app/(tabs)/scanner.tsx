@@ -1,78 +1,114 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useInventory } from '@/context/inventory';
+import { useInventory } from "@/context/inventory";
+import { useProfile } from "@/context/ProfileContext";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import { useEffect, useRef, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 
-type ProfileType = 'Baby' | 'Allergy';
+const ALLERGEN_KEYWORDS: Record<string, string[]> = {
+  peanuts: ["peanut", "peanuts", "groundnut"],
+  milk: ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],
+  egg: ["egg", "eggs", "egg white", "egg yolk", "albumin"],
+  gluten: ["gluten", "barley", "rye", "malt"],
+  soy: ["soy", "soybean", "soy lecithin"],
+  "tree nuts": [
+    "almond",
+    "cashew",
+    "walnut",
+    "pecan",
+    "pistachio",
+    "hazelnut",
+    "macadamia",
+  ],
+  fish: ["fish", "salmon", "tuna", "cod", "anchovy"],
+  "crustacean shellfish": ["shrimp", "prawn", "crab", "lobster", "crayfish"],
+  wheat: ["wheat", "wheat flour", "whole wheat", "durum", "semolina"],
+  sesame: ["sesame", "sesame seed", "sesame oil", "tahini"],
+};
+
+type ProfileType = "Baby" | "Allergy";
 
 const rules: Record<ProfileType, string[]> = {
-  'Baby': ['honey', 'sugar', 'salt', 'palm oil', 'additive'],
-  'Allergy': ['peanuts', 'milk', 'egg', 'gluten', 'soy']
+  Baby: ["honey", "sugar", "salt", "palm oil", "additive"],
+  Allergy: [],
 };
 
 export default function TabOneScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
-  const [profile, setProfile] = useState<ProfileType>('Baby');
+  const [profile, setProfile] = useState<ProfileType>("Baby");
   const [loadingAI, setLoadingAI] = useState(false);
   const { addItem } = useInventory();
-  
+  const { profile: userProfile } = useProfile();
   const isProcessing = useRef(false);
 
   useEffect(() => {
     requestPermission();
   }, []);
 
-  const fetchAIRecommendation = async (unsafeProduct: string, reason: string) => {
-  setLoadingAI(true);
-  try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': 'REPLACE_ME', // Replace with your sk-ant-... key
-        'anthropic-version': '2023-06-01',
-        'dangerouslyAllowBrowser': 'true' // Note: Only works in some environments
-      },
-      body: JSON.stringify({
-        model: "claude-3-haiku-20240307", // Haiku is faster and cheaper for testing
-        max_tokens: 200,
-        messages: [
-          {
-            role: "user",
-            content: `Product: ${unsafeProduct}. Issue: ${reason}. Suggest 1 safe alternative. Return ONLY JSON: {"recommendation": "name", "brand": "brand"}`
-          }
-        ]
-      }),
-    });
+  const fetchAIRecommendation = async (
+    unsafeProduct: string,
+    reason: string,
+  ) => {
+    setLoadingAI(true);
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "REPLACE_ME", // Replace with your sk-ant-... key
+          "anthropic-version": "2023-06-01",
+          dangerouslyAllowBrowser: "true", // Note: Only works in some environments
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307", // Haiku is faster and cheaper for testing
+          max_tokens: 200,
+          messages: [
+            {
+              role: "user",
+              content: `Product: ${unsafeProduct}. Issue: ${reason}. Suggest 1 safe alternative. Return ONLY JSON: {"recommendation": "name", "brand": "brand"}`,
+            },
+          ],
+        }),
+      });
 
-    const result = await response.json();
+      const result = await response.json();
 
-    // 1. Check if the API returned an error (like 401 or 403)
-    if (result.error) {
-      console.error("Claude API Error:", result.error.message);
-      throw new Error(result.error.message);
+      // 1. Check if the API returned an error (like 401 or 403)
+      if (result.error) {
+        console.error("Claude API Error:", result.error.message);
+        throw new Error(result.error.message);
+      }
+
+      // 2. Safely extract the text content
+      const rawText = result.content[0].text;
+
+      // 3. Parse JSON (with a fallback to prevent "undefined")
+      const recommendationData = JSON.parse(rawText);
+
+      Alert.alert(
+        "AI Recommendation",
+        `Try this instead: ${recommendationData.recommendation || "N/A"}\nBrand: ${recommendationData.brand || "N/A"}`,
+        [{ text: "Got it", onPress: resetScanner }],
+      );
+    } catch (error) {
+      console.error("Fetch Error:", error);
+      Alert.alert(
+        "AI Error",
+        "The AI service blocked the request or returned invalid data.",
+      );
+      resetScanner();
+    } finally {
+      setLoadingAI(false);
     }
-
-    // 2. Safely extract the text content
-    const rawText = result.content[0].text;
-    
-    // 3. Parse JSON (with a fallback to prevent "undefined")
-    const recommendationData = JSON.parse(rawText);
-
-    Alert.alert(
-      "AI Recommendation",
-      `Try this instead: ${recommendationData.recommendation || 'N/A'}\nBrand: ${recommendationData.brand || 'N/A'}`,
-      [{ text: "Got it", onPress: resetScanner }]
-    );
-  } catch (error) {
-    console.error("Fetch Error:", error);
-    Alert.alert("AI Error", "The AI service blocked the request or returned invalid data.");
-    resetScanner();
-  } finally {
-    setLoadingAI(false);
-  }
-};
+  };
 
   const resetScanner = () => {
     isProcessing.current = false;
@@ -82,12 +118,11 @@ export default function TabOneScreen() {
   const addToInventoryAndReset = (name: string, barcode: string) => {
     const added = addItem({ name, barcode });
     Alert.alert(
-      added ? 'Added to Inventory' : 'Already in Inventory',
+      added ? "Added to Inventory" : "Already in Inventory",
       `${name}`,
-      [{ text: 'OK', onPress: resetScanner }]
+      [{ text: "OK", onPress: resetScanner }],
     );
   };
-
 
   const handleBarCodeScanned = ({ data }: { data: string }) => {
     if (isProcessing.current || scanned) return;
@@ -96,40 +131,78 @@ export default function TabOneScreen() {
     setScanned(true);
 
     fetch(`https://world.openfoodfacts.org/api/v0/product/${data}.json`)
-      .then(res => res.json())
-      .then(json => {
+      .then((res) => res.json())
+      .then((json) => {
         if (json.status === 1) {
           const product = json.product;
-          const productName = product.product_name || 'Unknown Product';
+          const productName = product.product_name || "Unknown Product";
           const ingredients = (product.ingredients_text || "").toLowerCase();
-          const forbidden = rules[profile];
-          const matched = forbidden.filter(item => ingredients.includes(item));
-          
+
+          let matched: string[] = [];
+
+          if (profile === "Baby") {
+            const forbidden = rules.Baby;
+            matched = forbidden.filter((item) => ingredients.includes(item));
+          } else {
+            const selectedAllergens = userProfile.allergens || [];
+
+            if (selectedAllergens.length === 0) {
+              Alert.alert(
+                "No allergens selected",
+                "Please choose your allergens in Profile first.",
+                [{ text: "OK", onPress: resetScanner }],
+              );
+              return;
+            }
+
+            matched = selectedAllergens.filter((allergen) => {
+              const keywords = ALLERGEN_KEYWORDS[allergen] || [allergen];
+              return keywords.some((keyword) =>
+                ingredients.includes(keyword.toLowerCase()),
+              );
+            });
+          }
+
           if (matched.length > 0) {
             // Unsafe: Offer Alternative
             Alert.alert(
-              "⚠️ Forbidden Ingredients",
-              `Product: ${productName}\n\nDetected: ${matched.join(', ')}`,
+              profile === "Baby"
+                ? "⚠️ Not Suitable for Baby"
+                : "⚠️ Allergen Detected",
+              `Product: ${productName}\n\nDetected: ${matched.join(", ")}`,
               [
                 { text: "Don’t Add", style: "cancel", onPress: resetScanner },
-                { text: "Add to Inventory", onPress: () => addToInventoryAndReset(productName, data) },
-                { text: "Find Alternative", onPress: () => fetchAIRecommendation(productName, matched.join(', ')) },
-              ]
+                {
+                  text: "Add to Inventory",
+                  onPress: () => addToInventoryAndReset(productName, data),
+                },
+                {
+                  text: "Find Alternative",
+                  onPress: () =>
+                    fetchAIRecommendation(productName, matched.join(", ")),
+                },
+              ],
             );
           } else {
             // Safe
             Alert.alert(
               "✅ Safe",
-              `${productName} is safe for ${profile} mode.`,
+              profile === "Baby"
+                ? `${productName} looks safe for Baby mode.`
+                : `${productName} does not match your selected allergens.`,
               [
-                { text: "Add to Inventory", onPress: () => addToInventoryAndReset(productName, data) },
+                {
+                  text: "Add to Inventory",
+                  onPress: () => addToInventoryAndReset(productName, data),
+                },
                 { text: "OK", onPress: resetScanner },
-              ]
+              ],
             );
-
           }
         } else {
-          Alert.alert("Not Found", "Barcode not recognized.", [{ text: "Retry", onPress: resetScanner }]);
+          Alert.alert("Not Found", "Barcode not recognized.", [
+            { text: "Retry", onPress: resetScanner },
+          ]);
         }
       })
       .catch(() => {
@@ -138,7 +211,12 @@ export default function TabOneScreen() {
       });
   };
 
-  if (!permission) return <View style={styles.center}><ActivityIndicator size="large" /></View>;
+  if (!permission)
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
   if (!permission.granted) {
     return (
       <View style={styles.center}>
@@ -156,10 +234,18 @@ export default function TabOneScreen() {
         <View>
           <Text style={styles.headerLabel}>Current Mode</Text>
           <Text style={styles.headerValue}>{profile}</Text>
+          <Text style={styles.headerSubtext}>
+            User allergens:{" "}
+            {userProfile.allergens.length > 0
+              ? userProfile.allergens.join(", ")
+              : "None selected"}
+          </Text>
         </View>
-        <TouchableOpacity 
-          style={styles.switchButton} 
-          onPress={() => setProfile(prev => prev === 'Baby' ? 'Allergy' : 'Baby')}
+        <TouchableOpacity
+          style={styles.switchButton}
+          onPress={() =>
+            setProfile((prev) => (prev === "Baby" ? "Allergy" : "Baby"))
+          }
         >
           <Text style={styles.buttonText}>Switch Mode</Text>
         </TouchableOpacity>
@@ -175,16 +261,48 @@ export default function TabOneScreen() {
           <View style={styles.maskCenterRow}>
             <View style={styles.maskSide} />
             <View style={styles.focusedFrame}>
-               <View style={[styles.corner, { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4 }]} />
-               <View style={[styles.corner, { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4 }]} />
-               <View style={[styles.corner, { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4 }]} />
-               <View style={[styles.corner, { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4 }]} />
-               {loadingAI && (
-                 <View style={styles.aiLoadingOverlay}>
-                   <ActivityIndicator size="large" color="#fff" />
-                   <Text style={{color: '#fff', marginTop: 10}}>AI Thinking...</Text>
-                 </View>
-               )}
+              <View
+                style={[
+                  styles.corner,
+                  { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.corner,
+                  { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4 },
+                ]}
+              />
+              <View
+                style={[
+                  styles.corner,
+                  {
+                    bottom: 0,
+                    left: 0,
+                    borderBottomWidth: 4,
+                    borderLeftWidth: 4,
+                  },
+                ]}
+              />
+              <View
+                style={[
+                  styles.corner,
+                  {
+                    bottom: 0,
+                    right: 0,
+                    borderBottomWidth: 4,
+                    borderRightWidth: 4,
+                  },
+                ]}
+              />
+              {loadingAI && (
+                <View style={styles.aiLoadingOverlay}>
+                  <ActivityIndicator size="large" color="#fff" />
+                  <Text style={{ color: "#fff", marginTop: 10 }}>
+                    AI Thinking...
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={styles.maskSide} />
           </View>
@@ -199,32 +317,61 @@ export default function TabOneScreen() {
   );
 }
 
-const { width } = Dimensions.get('window');
+const { width } = Dimensions.get("window");
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#000' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  header: { 
-    position: 'absolute', top: 50, left: 20, right: 20, 
-    zIndex: 10, flexDirection: 'row', justifyContent: 'space-between',
-    backgroundColor: 'rgba(0,0,0,0.8)', padding: 15, borderRadius: 12, alignItems: 'center'
+  container: { flex: 1, backgroundColor: "#000" },
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  header: {
+    position: "absolute",
+    top: 50,
+    left: 20,
+    right: 20,
+    zIndex: 10,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(0,0,0,0.8)",
+    padding: 15,
+    borderRadius: 12,
+    alignItems: "center",
   },
-  headerLabel: { color: '#aaa', fontSize: 12 },
-  headerValue: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  switchButton: { backgroundColor: '#2f95dc', padding: 10, borderRadius: 8 },
-  button: { backgroundColor: '#2f95dc', padding: 15, borderRadius: 10 },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
-  overlay: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  maskSide: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', width: '100%' },
-  maskCenterRow: { flexDirection: 'row', height: 220 },
-  focusedFrame: { width: width * 0.7, height: 220, backgroundColor: 'transparent', position: 'relative' },
-  corner: { position: 'absolute', width: 20, height: 20, borderColor: '#2f95dc' },
-  footer: { position: 'absolute', bottom: 60, width: '100%', alignItems: 'center' },
-  footerText: { color: '#fff', backgroundColor: 'rgba(0,0,0,0.7)', padding: 12, borderRadius: 20 },
+  headerLabel: { color: "#aaa", fontSize: 12 },
+  headerValue: { color: "#fff", fontSize: 18, fontWeight: "bold" },
+  headerSubtext: { color: "#ddd", fontSize: 12, marginTop: 4 },
+  switchButton: { backgroundColor: "#2f95dc", padding: 10, borderRadius: 8 },
+  button: { backgroundColor: "#2f95dc", padding: 15, borderRadius: 10 },
+  buttonText: { color: "#fff", fontWeight: "bold" },
+  overlay: { flex: 1, justifyContent: "center", alignItems: "center" },
+  maskSide: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", width: "100%" },
+  maskCenterRow: { flexDirection: "row", height: 220 },
+  focusedFrame: {
+    width: width * 0.7,
+    height: 220,
+    backgroundColor: "transparent",
+    position: "relative",
+  },
+  corner: {
+    position: "absolute",
+    width: 20,
+    height: 20,
+    borderColor: "#2f95dc",
+  },
+  footer: {
+    position: "absolute",
+    bottom: 60,
+    width: "100%",
+    alignItems: "center",
+  },
+  footerText: {
+    color: "#fff",
+    backgroundColor: "rgba(0,0,0,0.7)",
+    padding: 12,
+    borderRadius: 20,
+  },
   aiLoadingOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(47, 149, 220, 0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderRadius: 10
-  }
+    backgroundColor: "rgba(47, 149, 220, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    borderRadius: 10,
+  },
 });
