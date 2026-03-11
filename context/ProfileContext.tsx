@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { router } from "expo-router";
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { Alert } from "react-native";
-import { router } from "expo-router";
 
 interface ProfileData {
   name: string;
@@ -17,13 +17,14 @@ interface ProfileContextType {
   login: (username: string) => Promise<boolean>;
   logout: () => Promise<void>;
   switchProfile: (name: string) => Promise<void>;
-  deleteProfile: (name: string) => Promise<void>;
+  // 加上 onSuccess 回调函数参数
+  deleteProfile: (name: string, onSuccess?: () => void) => Promise<void>;
   updateProfileLocally: (data: Partial<ProfileData>) => void;
   syncToJac: () => Promise<void>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
-const JAC_SERVER_URL = "http://35.3.241.130:8000";
+const JAC_SERVER_URL = "http://100.64.0.113:8000";
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -112,16 +113,23 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       await AsyncStorage.setItem("currentUser", name);
+      // 1. 先尝试读取目标用户的本地缓存
       const cached = await AsyncStorage.getItem(`cache_${name}`);
-      if (cached) setProfile(JSON.parse(cached));
-      else setProfile({ name, location: "", allergens: [], dietary_preferences: [] });
+      if (cached) {
+        setProfile(JSON.parse(cached));
+      } else {
+        // 2. 如果没有缓存，给个干净的初始状态
+        setProfile({ name, location: "", allergens: [], dietary_preferences: [] });
+      }
+      // 3. 尝试从云端拉取最新数据覆盖
       await fetchProfileFromJac(name);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const deleteProfile = async (name: string) => {
+  // 1. 这里加了 onSuccess 参数 👇
+  const deleteProfile = async (name: string, onSuccess?: () => void) => {
       Alert.alert(
         "Confirm Delete",
         `Are you sure you want to delete the profile "${name}"?`,
@@ -141,6 +149,11 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
                 
                 // 3. 更新内存中的列表状态
                 setProfiles(newProfiles);
+
+                // 👇 🚨 关键新增：如果传入了清空商品的动作，就在这里执行！
+                if (onSuccess) {
+                  onSuccess();
+                }
 
                 // 4. 处理跳转逻辑（如果你删掉的是当前正在用的用户）
                 if (profile.name === name) {
@@ -187,7 +200,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateProfileLocally = (data: Partial<ProfileData>) => {
-    setProfile((prev) => ({ ...prev, ...data }));
+    setProfile((prev) => {
+      const newProfile = { ...prev, ...data };
+      // 🚨 关键修复：每次本地修改（点选过敏原），立刻存入本地缓存！
+      // 这样就算没点 Save to Cloud，直接切换账号数据也不会丢了。
+      if (newProfile.name) {
+        AsyncStorage.setItem(`cache_${newProfile.name}`, JSON.stringify(newProfile)).catch(console.error);
+      }
+      return newProfile;
+    });
   };
 
   return (

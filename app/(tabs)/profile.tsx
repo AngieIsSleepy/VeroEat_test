@@ -1,23 +1,25 @@
+import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
+import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
-  Modal,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons"; 
 
 const AVAILABLE_ALLERGENS = ["peanuts", "milk", "egg", "gluten", "soy", "tree nuts", "fish", "crustacean shellfish", "wheat", "sesame"];
 
 export default function ProfileScreen() {
   const { profile, profiles, updateProfileLocally, syncToJac, switchProfile, deleteProfile, logout, isLoading } = useProfile();
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const { removeItemsByProfile } = useInventory();
 
   const toggleItem = (item: string) => {
     const current = profile.allergens || [];
@@ -68,7 +70,7 @@ export default function ProfileScreen() {
 
           <TouchableOpacity 
             style={styles.deleteMainButton} 
-            onPress={() => deleteProfile(profile.name)}
+            onPress={() => deleteProfile(profile.name, () => removeItemsByProfile(profile.name))}
           >
             <Text style={styles.deleteMainButtonText}>Delete This Profile</Text>
           </TouchableOpacity>
@@ -89,7 +91,7 @@ export default function ProfileScreen() {
                 <TouchableOpacity style={{ flex: 1, paddingVertical: 15 }} onPress={async () => { await switchProfile(name); setShowSwitchModal(false); }}>
                   <Text style={[styles.profileOptionText, name === profile.name && styles.activeText]}>{name} {name === profile.name && "✓"}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => deleteProfile(name)} style={styles.deleteIconButton}>
+                <TouchableOpacity onPress={() => deleteProfile(name, () => removeItemsByProfile(name))} style={styles.deleteIconButton}>
                   <Ionicons name="trash-outline" size={20} color="#EF4444" />
                 </TouchableOpacity>
               </View>

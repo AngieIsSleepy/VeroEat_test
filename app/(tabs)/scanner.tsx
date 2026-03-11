@@ -6,11 +6,11 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ScrollView,
 } from "react-native";
 
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
@@ -182,6 +182,16 @@ export default function CameraScreen() {
         onBarcodeScanned={scanned ? undefined : handleBarCodeScanned}
       />
 
+      <View style={styles.scannerOverlay} pointerEvents="none">
+        <View style={styles.scannerBox}>
+          <View style={[styles.corner, styles.cornerTL]} />
+          <View style={[styles.corner, styles.cornerTR]} />
+          <View style={[styles.corner, styles.cornerBL]} />
+          <View style={[styles.corner, styles.cornerBR]} />
+        </View>
+        <Text style={styles.scanText}>Align barcode within the frame</Text>
+      </View>
+
       {showProfiles && (
         <View style={styles.overlay}>
           <View style={styles.profileBox}>
@@ -265,5 +275,41 @@ const styles = StyleSheet.create({
   profileText: { fontSize: 16, textAlign: "center" },
   profileTextActive: { color: "#2f95dc", fontWeight: "bold" },
   cancel: { marginTop: 10, alignItems: "center" },
-  fullLoading: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", zIndex: 999 }
+  fullLoading: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", zIndex: 999 },
+
+  // 👇 补充在原有 styles 里面
+  scannerOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 1, // 确保在摄像头上面
+  },
+  scannerBox: {
+    width: 250,
+    height: 250,
+    backgroundColor: "transparent",
+    position: "relative",
+  },
+  scanText: {
+    color: "white",
+    fontSize: 16,
+    marginTop: 30,
+    fontWeight: "600",
+    textShadowColor: "rgba(0, 0, 0, 0.75)",
+    textShadowOffset: { width: -1, height: 1 },
+    textShadowRadius: 10,
+  },
+  corner: {
+    position: "absolute",
+    width: 40,
+    height: 40,
+    borderColor: "#10B981", // 酷炫的绿色边框
+    borderWidth: 5,
+  },
+  cornerTL: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 20 },
+  cornerTR: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 20 },
+  cornerBL: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 20 },
+  cornerBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 20 },
+
+
 });

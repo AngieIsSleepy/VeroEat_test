@@ -1,9 +1,8 @@
-import React from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useInventory } from '@/context/inventory';
 import { Ionicons } from '@expo/vector-icons';
+import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 
 
@@ -77,7 +76,7 @@ export default function InventoryScreen() {
 
                 <Pressable
                   style={styles.removeBtn}
-                  onPress={() => removeItem(item.barcode)}
+                  onPress={() => removeItem(item.id)} // 🎯 换成我们独一无二的 id
                 >
                   <Ionicons name="trash-outline" size={20} color="#94A3B8" />
                 </Pressable>
