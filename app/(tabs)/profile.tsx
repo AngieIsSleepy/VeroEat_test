@@ -9,254 +9,136 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Modal,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons"; 
 
-
-const AVAILABLE_ALLERGENS = [
-  "peanuts",
-  "milk",
-  "egg",
-  "gluten",
-  "soy",
-  "tree nuts",
-  "fish",
-  "crustacean shellfish",
-  "wheat",
-  "sesame",
-];
-const AVAILABLE_DIETS = ["vegan", "vegetarian", "keto", "paleo", "halal"];
+const AVAILABLE_ALLERGENS = ["peanuts", "milk", "egg", "gluten", "soy", "tree nuts", "fish", "crustacean shellfish", "wheat", "sesame"];
 
 export default function ProfileScreen() {
-  // const { profile, logout, login } = useProfile();
+  const { profile, profiles, updateProfileLocally, syncToJac, switchProfile, deleteProfile, logout, isLoading } = useProfile();
+  const [showSwitchModal, setShowSwitchModal] = useState(false);
 
-  const { profile, updateProfileLocally, syncToJac, logout, isLoading } =
-    useProfile();
-
-  const [isSaving, setIsSaving] = useState(false);
-
-  const toggleItem = (
-    category: "allergens" | "dietary_preferences",
-    item: string,
-  ) => {
-    const currentList = profile[category] || [];
-    const isSelected = currentList.includes(item);
-
-    const newList = isSelected
-      ? currentList.filter((i) => i !== item)
-      : [...currentList, item];
-
-    updateProfileLocally({ [category]: newList });
+  const toggleItem = (item: string) => {
+    const current = profile.allergens || [];
+    const next = current.includes(item) ? current.filter(i => i !== item) : [...current, item];
+    updateProfileLocally({ allergens: next });
   };
 
-  const handleSave = async () => {
-    setIsSaving(true);
-    await syncToJac();
-    setIsSaving(false);
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    router.replace("/login" as any);
-  };
-
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color="#3B82F6" />
-        <Text style={{ marginTop: 10, color: "#666" }}>Loading Profile...</Text>
-      </View>
-    );
-  }
+  if (isLoading) return <View style={styles.center}><ActivityIndicator size="large" color="#3B82F6" /></View>;
 
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={{ paddingBottom: 100 }}
-    >
-      <View style={styles.header}>
-        <View style={styles.avatar}>
-          <Text style={styles.avatarText}>
-            {profile.name ? profile.name.charAt(0).toUpperCase() : "?"}
-          </Text>
+    <View style={{ flex: 1 }}>
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.header}>
+          <View style={styles.avatar}><Text style={styles.avatarText}>{profile.name?.[0]?.toUpperCase() || "?"}</Text></View>
+          <Text style={styles.nameText}>{profile.name || "Guest"}</Text>
+          <TextInput
+            style={styles.locationInput}
+            value={profile.location}
+            onChangeText={(text) => updateProfileLocally({ location: text })}
+            placeholder="Your Location"
+          />
         </View>
-        <Text style={styles.nameText}>{profile.name || "Guest User"}</Text>
 
-        <TextInput
-          style={styles.locationInput}
-          placeholder="Where are you located?"
-          placeholderTextColor="#9ca3af"
-          value={profile.location}
-          onChangeText={(text) => updateProfileLocally({ location: text })}
-        />
-      </View>
-
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Allergies</Text>
-        <View style={styles.chipContainer}>
-          {AVAILABLE_ALLERGENS.map((allergen) => {
-            const isSelected = profile.allergens?.includes(allergen);
-            return (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Allergies</Text>
+          <View style={styles.chipContainer}>
+            {AVAILABLE_ALLERGENS.map((a) => (
               <TouchableOpacity
-                key={allergen}
-                style={[styles.chip, isSelected && styles.chipSelected]}
-                onPress={() => toggleItem("allergens", allergen)}
+                key={a}
+                style={[styles.chip, profile.allergens?.includes(a) && styles.chipSelected]}
+                onPress={() => toggleItem(a)}
               >
-                <Text
-                  style={[
-                    styles.chipText,
-                    isSelected && styles.chipTextSelected,
-                  ]}
-                >
-                  {allergen}
-                </Text>
+                <Text style={[styles.chipText, profile.allergens?.includes(a) && styles.chipTextSelected]}>{a}</Text>
               </TouchableOpacity>
-            );
-          })}
+            ))}
+          </View>
         </View>
-      </View>
 
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Dietary Preferences</Text>
-        <View style={styles.chipContainer}>
-          {AVAILABLE_DIETS.map((diet) => {
-            const isSelected = profile.dietary_preferences?.includes(diet);
-            return (
-              <TouchableOpacity
-                key={diet}
-                style={[styles.chip, isSelected && styles.chipSelected]}
-                onPress={() => toggleItem("dietary_preferences", diet)}
-              >
-                <Text
-                  style={[
-                    styles.chipText,
-                    isSelected && styles.chipTextSelected,
-                  ]}
-                >
-                  {diet}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
+        {/* 这里的 actionContainer 包含了新增的 Delete 按钮 */}
+        <View style={styles.actionContainer}>
+          <TouchableOpacity style={styles.saveButton} onPress={syncToJac}>
+            <Text style={styles.saveButtonText}>Save to Cloud</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity style={styles.switchButton} onPress={() => setShowSwitchModal(true)}>
+            <Text style={styles.switchButtonText}>Switch Profile</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.deleteMainButton} 
+            onPress={() => deleteProfile(profile.name)}
+          >
+            <Text style={styles.deleteMainButtonText}>Delete This Profile</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.logoutButton} onPress={async () => { await logout(); router.replace("/login"); }}>
+            <Text style={styles.logoutButtonText}>Log Out</Text>
+          </TouchableOpacity>
         </View>
-      </View>
+      </ScrollView>
 
-      <View style={styles.actionContainer}>
-        <TouchableOpacity
-          style={[styles.saveButton, isSaving && { opacity: 0.7 }]}
-          onPress={handleSave}
-          disabled={isSaving}
-        >
-          <Text style={styles.saveButtonText}>
-            {isSaving ? "Saving..." : "Save to Cloud"}
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Text style={styles.logoutButtonText}>Log Out</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.switchButton}
-          onPress={handleLogout}
-        >
-          <Text style={styles.switchButtonText}>Switch Profile</Text>
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+      {/* 切换 Profile 的弹窗 */}
+      <Modal visible={showSwitchModal} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Select User</Text>
+            {profiles.map((name) => (
+              <View key={name} style={[styles.profileOptionRow, name === profile.name && styles.profileOptionActive]}>
+                <TouchableOpacity style={{ flex: 1, paddingVertical: 15 }} onPress={async () => { await switchProfile(name); setShowSwitchModal(false); }}>
+                  <Text style={[styles.profileOptionText, name === profile.name && styles.activeText]}>{name} {name === profile.name && "✓"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => deleteProfile(name)} style={styles.deleteIconButton}>
+                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity style={styles.addProfileButton} onPress={() => { setShowSwitchModal(false); router.push({ pathname: "/login", params: { canGoBack: "true" } }); }}>
+              <Text style={styles.addProfileButtonText}>+ Create New Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowSwitchModal(false)} style={styles.modalClose}><Text style={{ color: "#6B7280", fontWeight: "bold" }}>Cancel</Text></TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F9FAFB" },
   center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    backgroundColor: "#fff",
-    alignItems: "center",
-    paddingVertical: 40,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
-  },
-  avatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "#DBEAFE",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 15,
-  },
+  header: { backgroundColor: "#fff", alignItems: "center", paddingVertical: 40, borderBottomWidth: 1, borderBottomColor: "#f3f4f6" },
+  avatar: { width: 80, height: 80, borderRadius: 40, backgroundColor: "#DBEAFE", justifyContent: "center", alignItems: "center", marginBottom: 15 },
   avatarText: { fontSize: 32, fontWeight: "bold", color: "#1D4ED8" },
-  nameText: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 5,
-  },
-  locationInput: {
-    fontSize: 16,
-    color: "#4B5563",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 20,
-    minWidth: 150,
-    textAlign: "center",
-  },
+  nameText: { fontSize: 24, fontWeight: "bold", color: "#111827" },
+  locationInput: { fontSize: 16, color: "#4B5563", backgroundColor: "#F3F4F6", paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20, marginTop: 10, textAlign: "center" },
   section: { padding: 20, backgroundColor: "#fff", marginTop: 10 },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#374151",
-    marginBottom: 15,
-  },
+  sectionTitle: { fontSize: 18, fontWeight: "bold", color: "#374151", marginBottom: 15 },
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  chip: {
-    backgroundColor: "#F3F4F6",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  chipSelected: {
-    backgroundColor: "#3B82F6",
-    borderColor: "#3B82F6",
-  },
-  chipText: { fontSize: 14, color: "#4B5563", fontWeight: "500" },
+  chip: { backgroundColor: "#F3F4F6", paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1, borderColor: "#E5E7EB" },
+  chipSelected: { backgroundColor: "#3B82F6", borderColor: "#3B82F6" },
+  chipText: { fontSize: 14, color: "#4B5563" },
   chipTextSelected: { color: "#FFFFFF" },
-  actionContainer: { padding: 20, marginTop: 10 },
-  saveButton: {
-    backgroundColor: "#10B981",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 15,
-    shadowColor: "#10B981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
+  actionContainer: { padding: 20 },
+  saveButton: { backgroundColor: "#10B981", padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 10 },
   saveButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  logoutButton: {
-    backgroundColor: "#FEE2E2",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  logoutButtonText: { color: "#EF4444", fontSize: 16, fontWeight: "bold" },
-
-  switchButton: {
-      backgroundColor: "#E5E7EB",
-      padding: 16,
-      borderRadius: 12,
-      alignItems: "center",
-      marginTop: 10,
-  },
-
-  switchButtonText: {
-      color: "#374151",
-      fontSize: 16,
-      fontWeight: "bold",
-  },
+  switchButton: { backgroundColor: "#E5E7EB", padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 10 },
+  switchButtonText: { color: "#374151", fontSize: 16, fontWeight: "bold" },
+  // 新增：主页面删除按钮样式
+  deleteMainButton: { backgroundColor: "#FEF2F2", padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 10, borderWidth: 1, borderColor: "#FEE2E2" },
+  deleteMainButtonText: { color: "#EF4444", fontSize: 16, fontWeight: "bold" },
+  logoutButton: { padding: 16, alignItems: "center" },
+  logoutButtonText: { color: "#6B7280", fontSize: 16, fontWeight: "bold" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center" },
+  modalContent: { width: "85%", backgroundColor: "white", borderRadius: 20, padding: 20 },
+  modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
+  profileOptionRow: { flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderBottomColor: "#F3F4F6", paddingHorizontal: 10 },
+  profileOptionActive: { backgroundColor: "#EFF6FF", borderRadius: 10 },
+  profileOptionText: { fontSize: 16, color: "#374151" },
+  activeText: { color: "#3B82F6", fontWeight: "bold" },
+  deleteIconButton: { padding: 10 },
+  addProfileButton: { backgroundColor: "#F0FDF4", padding: 15, borderRadius: 10, alignItems: "center", marginTop: 15 },
+  addProfileButtonText: { color: "#16A34A", fontWeight: "bold", fontSize: 16 },
+  modalClose: { marginTop: 20, alignItems: "center" },
 });

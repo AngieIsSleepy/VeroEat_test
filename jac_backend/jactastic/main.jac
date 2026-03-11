@@ -95,3 +95,9 @@ walker get_user {
         }
     }
 }
+
+walker root {
+    can start with entry {
+        print("Jac API Server Running 🚀");
+    }
+}

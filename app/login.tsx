@@ -1,142 +1,54 @@
 import { useProfile } from "@/context/ProfileContext";
-import { router } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 export default function LoginScreen() {
-  const [username, setUsername] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
-
+  const { canGoBack } = useLocalSearchParams();
+  const router = useRouter();
   const { login } = useProfile();
+  const [username, setUsername] = useState("");
 
   const handleLogin = async () => {
-    const cleanName = username.trim();
-
-    if (!cleanName) {
-      Alert.alert("Error", "Please enter your name.");
-      return;
-    }
-
-    setIsLoggingIn(true);
-
-    try {
-      const success = await login(cleanName);
-
-      if (success) {
-        router.replace("/(tabs)");
-      } else {
-        Alert.alert("Error", "Failed to connect to the server.");
-      }
-    } catch (error) {
-      Alert.alert("Error", "Something went wrong.");
-    } finally {
-      setIsLoggingIn(false);
+    if (!username.trim()) return;
+    const success = await login(username.trim());
+    if (success) {
+      router.replace("/(tabs)/profile");
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-      style={styles.container}
-    >
-      <View style={styles.formContainer}>
-        <Text style={styles.title}>Welcome to VeroEat 👋</Text>
-        <Text style={styles.subtitle}>
-          Enter your name to log in or create a new profile.
-        </Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Your Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="e.g. Alex"
-            placeholderTextColor="#9CA3AF"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="words"
-          />
-        </View>
-
-        <TouchableOpacity
-          style={[styles.loginButton, isLoggingIn && { opacity: 0.7 }]}
-          onPress={handleLogin}
-          disabled={isLoggingIn}
-        >
-          {isLoggingIn ? (
-            <ActivityIndicator color="#FFFFFF" />
-          ) : (
-            <Text style={styles.loginButtonText}>Continue</Text>
-          )}
+    <View style={styles.container}>
+      {/* 误触返回按钮 */}
+      {canGoBack === "true" && (
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Text style={styles.backButtonText}>← Back to Profile</Text>
         </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+      )}
+
+      <Text style={styles.title}>Who's scanning?</Text>
+      
+      <TextInput
+        style={styles.input}
+        placeholder="Enter Name"
+        value={username}
+        onChangeText={setUsername}
+        autoCapitalize="none"
+      />
+
+      <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+        <Text style={styles.buttonText}>Start</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#F9FAFB",
-    justifyContent: "center",
-  },
-  formContainer: {
-    paddingHorizontal: 30,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginBottom: 40,
-    lineHeight: 24,
-  },
-  inputGroup: {
-    marginBottom: 20,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#374151",
-    marginBottom: 8,
-  },
-  input: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: "#111827",
-  },
-  loginButton: {
-    backgroundColor: "#3B82F6",
-    padding: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 10,
-    shadowColor: "#3B82F6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  loginButtonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
+  container: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fff", padding: 20 },
+  backButton: { position: "absolute", top: 60, left: 20, padding: 10 },
+  backButtonText: { color: "#3B82F6", fontSize: 16, fontWeight: "600" },
+  title: { fontSize: 28, fontWeight: "bold", marginBottom: 30, color: "#111827" },
+  input: { width: "100%", height: 55, backgroundColor: "#F3F4F6", borderRadius: 12, paddingHorizontal: 15, fontSize: 18, marginBottom: 20 },
+  loginButton: { width: "100%", height: 55, backgroundColor: "#3B82F6", borderRadius: 12, justifyContent: "center", alignItems: "center" },
+  buttonText: { color: "#fff", fontSize: 18, fontWeight: "bold" },
 });

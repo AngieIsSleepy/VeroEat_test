@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Alert } from 'react-native';
-
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { Alert } from "react-native";
+import { router } from "expo-router";
 
 interface ProfileData {
   name: string;
@@ -12,24 +12,24 @@ interface ProfileData {
 
 interface ProfileContextType {
   profile: ProfileData;
+  profiles: string[];
   isLoading: boolean;
   login: (username: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  switchProfile: (name: string) => Promise<void>;
+  deleteProfile: (name: string) => Promise<void>;
   updateProfileLocally: (data: Partial<ProfileData>) => void;
   syncToJac: () => Promise<void>;
-  logout: () => Promise<void>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
-
-// Change middle part to your own ipv4 address
-const JAC_SERVER_URL = 'http://100.64.0.113:8000';
+const JAC_SERVER_URL = "http://35.3.241.130:8000";
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<string[]>([]);
-
   const [profile, setProfile] = useState<ProfileData>({
-    name: '',
-    location: '',
+    name: "",
+    location: "",
     allergens: [],
     dietary_preferences: [],
   });
@@ -41,170 +41,164 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const checkLoginStatus = async () => {
     try {
-      const savedName = await AsyncStorage.getItem('currentUser');
-      if (savedName) {
-        await fetchProfileFromJac(savedName);
+      const savedProfiles = await AsyncStorage.getItem("profiles");
+      const savedCurrent = await AsyncStorage.getItem("currentUser");
+      if (savedProfiles) setProfiles(JSON.parse(savedProfiles));
+      if (savedCurrent) {
+        const cached = await AsyncStorage.getItem(`cache_${savedCurrent}`);
+        if (cached) setProfile(JSON.parse(cached));
+        await fetchProfileFromJac(savedCurrent);
       }
     } catch (e) {
-      console.error('Failed to load local data', e);
+      console.error("Initialization error", e);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const getJacToken = async (username: string) => {
-    const loginUsername = username.trim() || "defaultuser";
-    const password = "password123456";
-
-    try {
-      await fetch(`${JAC_SERVER_URL}/user/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: loginUsername, password: password }) 
-      });
-
-      const loginRes = await fetch(`${JAC_SERVER_URL}/user/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ username: loginUsername, password: password }) 
-      });
-
-      if (loginRes.ok) {
-        const responseData = await loginRes.json();
-        console.log("Backend gave us:", responseData); 
-        
-        const finalToken = responseData.data?.token || responseData.token; 
-        
-        console.log("My final token is:", finalToken); 
-        return finalToken; 
-      } else {
-        console.error("Login completely failed", await loginRes.text());
-        return null;
-      }
-    } catch (e) {
-      console.error('Token fetch error:', e);
-      return null;
-    }
-  };
-
-
   const fetchProfileFromJac = async (username: string) => {
-    const token = await getJacToken(username);
-    
     try {
       const res = await fetch(`${JAC_SERVER_URL}/walker/get_user`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: username }),
       });
-      
       const json = await res.json();
-      console.log("📦 [Fetch] Get User Response:", JSON.stringify(json, null, 2));
-      
       const payload = json?.data?.result?.response_data;
-      
-      if (res.ok && payload && payload.status === 'success' && payload.data) {
-        console.log("✅ Successfully extracted profile:", payload.data);
-        setProfile(payload.data); 
-        return;
+
+      if (payload && payload.status === "success" && payload.data) {
+        const serverData: ProfileData = {
+          name: username,
+          location: payload.data.location || "",
+          allergens: Array.isArray(payload.data.allergens) ? payload.data.allergens : [],
+          dietary_preferences: Array.isArray(payload.data.dietary_preferences) ? payload.data.dietary_preferences : [],
+        };
+        setProfile(serverData);
+        await AsyncStorage.setItem(`cache_${username}`, JSON.stringify(serverData));
       }
-      
-      setProfile(prev => ({ ...prev, name: username }));
-      
     } catch (e) {
-      console.error("Fetch error:", e);
-      setProfile(prev => ({ ...prev, name: username }));
+      console.log("Network error, kept local data.");
     }
   };
 
-  // const login = async (username: string) => {
-  //   setIsLoading(true);
-  //   try {
-  //     await AsyncStorage.setItem('currentUser', username);
-  //     await fetchProfileFromJac(username);
-  //     setIsLoading(false);
-  //     return true;
-  //   } catch (e) {
-  //     setIsLoading(false);
-  //     return false;
-  //   }
-  // };
-
   const login = async (username: string) => {
+    const trimmedName = username.trim();
+    if (!trimmedName) return false;
     setIsLoading(true);
-
     try {
       const savedProfiles = await AsyncStorage.getItem("profiles");
-      const profileList = savedProfiles ? JSON.parse(savedProfiles) : [];
-
-      if (!profileList.includes(username)) {
-        profileList.push(username);
+      let profileList = savedProfiles ? JSON.parse(savedProfiles) : [];
+      if (!profileList.includes(trimmedName)) {
+        profileList = [...profileList, trimmedName];
         await AsyncStorage.setItem("profiles", JSON.stringify(profileList));
       }
-
       setProfiles(profileList);
+      await AsyncStorage.setItem("currentUser", trimmedName);
 
-      await AsyncStorage.setItem("currentUser", username);
+      const cached = await AsyncStorage.getItem(`cache_${trimmedName}`);
+      if (cached) setProfile(JSON.parse(cached));
+      else setProfile({ name: trimmedName, location: "", allergens: [], dietary_preferences: [] });
 
-      await fetchProfileFromJac(username);
-
-      setIsLoading(false);
+      await fetchProfileFromJac(trimmedName);
       return true;
-    } catch (e) {
-      setIsLoading(false);
+    } catch {
       return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const switchProfile = async (name: string) => {
+    setIsLoading(true);
+    try {
+      await AsyncStorage.setItem("currentUser", name);
+      const cached = await AsyncStorage.getItem(`cache_${name}`);
+      if (cached) setProfile(JSON.parse(cached));
+      else setProfile({ name, location: "", allergens: [], dietary_preferences: [] });
+      await fetchProfileFromJac(name);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const deleteProfile = async (name: string) => {
+      Alert.alert(
+        "Confirm Delete",
+        `Are you sure you want to delete the profile "${name}"?`,
+        [
+          { text: "No", style: "cancel" },
+          {
+            text: "Yes, Delete",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                // 1. 计算新的 profile 列表
+                const newProfiles = profiles.filter((p) => p !== name);
+                
+                // 2. 更新本地持久化存储
+                await AsyncStorage.setItem("profiles", JSON.stringify(newProfiles));
+                await AsyncStorage.removeItem(`cache_${name}`);
+                
+                // 3. 更新内存中的列表状态
+                setProfiles(newProfiles);
+
+                // 4. 处理跳转逻辑（如果你删掉的是当前正在用的用户）
+                if (profile.name === name) {
+                  if (newProfiles.length > 0) {
+                    // 如果还有其他人，切换到第一个
+                    const firstProfile = newProfiles[0];
+                    await switchProfile(firstProfile);
+                    Alert.alert("Profile Deleted", `Switched to ${firstProfile}`);
+                  } else {
+                    // 如果全删光了，才去登录页
+                    await logout();
+                    router.replace("/login");
+                  }
+                }
+              } catch (e) {
+                console.error("Delete error", e);
+                Alert.alert("Error", "Failed to delete profile");
+              }
+            },
+          },
+        ]
+      );
+    };
+
+  const syncToJac = async () => {
+    try {
+      const res = await fetch(`${JAC_SERVER_URL}/walker/create_or_update_user`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(profile),
+      });
+      if (res.ok) {
+        await AsyncStorage.setItem(`cache_${profile.name}`, JSON.stringify(profile));
+        Alert.alert("Success 🎉", "Settings saved!");
+      }
+    } catch {
+      Alert.alert("Error", "Cloud sync failed");
     }
   };
 
   const logout = async () => {
-    await AsyncStorage.removeItem('currentUser');
-    setProfile({ name: '', location: '', allergens: [], dietary_preferences: [] });
+    await AsyncStorage.removeItem("currentUser");
+    setProfile({ name: "", location: "", allergens: [], dietary_preferences: [] });
   };
 
   const updateProfileLocally = (data: Partial<ProfileData>) => {
-    setProfile(prev => ({ ...prev, ...data }));
-  };
-
-  const syncToJac = async () => {
-    const token = await getJacToken(profile.name);
-
-    try {
-      const res = await fetch(`${JAC_SERVER_URL}/walker/create_or_update_user`, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}` 
-        },
-        body: JSON.stringify(profile),
-      });
-      
-      if (res.ok) {
-        Alert.alert("Success 🎉", "Profile saved to Cloud!");
-        console.log("✅ [Sync] Saved successfully!");
-      } else {
-        const errorText = await res.text();
-        Alert.alert("Backend Crash Info 🚨", errorText.substring(0, 500));
-        console.error("❌ [Sync] 500 Error details:", errorText);
-      }
-    } catch (e) {
-      Alert.alert("Error", "Could not sync with backend.");
-    }
+    setProfile((prev) => ({ ...prev, ...data }));
   };
 
   return (
-    <ProfileContext.Provider value={{ profile, isLoading, login, updateProfileLocally, syncToJac, logout }}>
+    <ProfileContext.Provider value={{ profile, profiles, isLoading, login, logout, switchProfile, deleteProfile, updateProfileLocally, syncToJac }}>
       {children}
     </ProfileContext.Provider>
   );
 }
 
-export function useProfile() {
+export const useProfile = () => {
   const context = useContext(ProfileContext);
-  if (context === undefined) {
-    throw new Error('useProfile must be used within a ProfileProvider');
-  }
+  if (!context) throw new Error("useProfile must be inside ProfileProvider");
   return context;
-}
+};
