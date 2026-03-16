@@ -4,10 +4,23 @@ import { useInventory } from '@/context/inventory';
 import { Ionicons } from '@expo/vector-icons';
 import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
 
-
-
 export default function InventoryScreen() {
   const { items, removeItem, clear } = useInventory();
+
+  // 格式化日期显示
+  const formatDate = (timestamp?: number) => {
+    if (!timestamp) return 'No Date';
+    return new Date(timestamp).toLocaleDateString();
+  };
+
+  // 查看 AI 成分总结详情
+  const showIngredientsDetail = (name: string, summary?: string) => {
+    Alert.alert(
+      name,
+      summary || "No ingredients summary available.",
+      [{ text: "Close", style: "cancel" }]
+    );
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -35,54 +48,82 @@ export default function InventoryScreen() {
       ) : (
         <FlatList
           data={items}
-          keyExtractor={(item) => item.id || item.barcode}
+          keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <ThemedView style={styles.card}>
-              <View style={styles.row}>
-                <View style={{ flex: 1 }}>
-                  <View style={styles.titleRow}>
-                    <ThemedText type="defaultSemiBold" style={styles.itemName} numberOfLines={1}>
-                      {item.name}
-                    </ThemedText>
-                    
-                    <View style={[
-                      styles.statusBadge, 
-                      { backgroundColor: item.isSafe ? '#DCFCE7' : '#FEE2E2' }
-                    ]}>
-                      <ThemedText style={[
-                        styles.statusText, 
-                        { color: item.isSafe ? '#16A34A' : '#EF4444' }
-                      ]}>
-                        {item.isSafe ? 'Safe' : 'Warning'}
-                      </ThemedText>
+          renderItem={({ item }) => {
+            // 计算过期逻辑
+            const isExpired = item.expiryDate ? item.expiryDate < Date.now() : false;
+            const daysLeft = item.expiryDate 
+              ? Math.ceil((item.expiryDate - Date.now()) / (1000 * 60 * 60 * 24)) 
+              : null;
+
+            return (
+              <Pressable onPress={() => showIngredientsDetail(item.name, item.ingredientsSummary)}>
+                <ThemedView style={styles.card}>
+                  <View style={styles.row}>
+                    <View style={{ flex: 1 }}>
+                      <View style={styles.titleRow}>
+                        <ThemedText type="defaultSemiBold" style={styles.itemName} numberOfLines={1}>
+                          {item.name}
+                        </ThemedText>
+                        
+                        <View style={[
+                          styles.statusBadge, 
+                          { backgroundColor: item.isSafe ? '#DCFCE7' : '#FEE2E2' }
+                        ]}>
+                          <ThemedText style={[
+                            styles.statusText, 
+                            { color: item.isSafe ? '#16A34A' : '#EF4444' }
+                          ]}>
+                            {item.isSafe ? 'Safe' : 'Warning'}
+                          </ThemedText>
+                        </View>
+                      </View>
+                      
+                      {/* 保质期提示栏 */}
+                      {item.expiryDate && (
+                        <View style={styles.infoRow}>
+                          <Ionicons 
+                            name="time-outline" 
+                            size={14} 
+                            color={isExpired ? "#EF4444" : "#64748B"} 
+                          />
+                          <ThemedText style={[
+                            styles.sub, 
+                            isExpired && { color: "#EF4444", fontWeight: "bold" }
+                          ]}>
+                            {" "}Best By: {formatDate(item.expiryDate)} 
+                            {" "}({isExpired ? "Expired" : `${daysLeft} days left`})
+                          </ThemedText>
+                        </View>
+                      )}
+
+                      <View style={styles.infoRow}>
+                        <Ionicons name="person-circle-outline" size={14} color="#64748B" />
+                        <ThemedText style={styles.sub}>
+                          {" "}Scanned by: <ThemedText style={styles.boldSub}>{item.scannedBy || 'Guest'}</ThemedText>
+                        </ThemedText>
+                      </View>
+
+                      <View style={styles.infoRow}>
+                        <Ionicons name="barcode-outline" size={14} color="#64748B" />
+                        <ThemedText style={styles.sub}>
+                          {" "}Barcode: {item.barcode}
+                        </ThemedText>
+                      </View>
                     </View>
-                  </View>
-                  
-                  <View style={styles.infoRow}>
-                    <Ionicons name="person-circle-outline" size={14} color="#64748B" />
-                    <ThemedText style={styles.sub}>
-                      {" "}Scanned by: <ThemedText style={styles.boldSub}>{item.scannedBy || 'Guest'}</ThemedText>
-                    </ThemedText>
-                  </View>
 
-                  <View style={styles.infoRow}>
-                    <Ionicons name="barcode-outline" size={14} color="#64748B" />
-                    <ThemedText style={styles.sub}>
-                      {" "}Barcode: {item.barcode}
-                    </ThemedText>
+                    <Pressable
+                      style={styles.removeBtn}
+                      onPress={() => removeItem(item.id)}
+                    >
+                      <Ionicons name="trash-outline" size={20} color="#94A3B8" />
+                    </Pressable>
                   </View>
-                </View>
-
-                <Pressable
-                  style={styles.removeBtn}
-                  onPress={() => removeItem(item.id)} // 🎯 换成我们独一无二的 id
-                >
-                  <Ionicons name="trash-outline" size={20} color="#94A3B8" />
-                </Pressable>
-              </View>
-            </ThemedView>
-          )}
+                </ThemedView>
+              </Pressable>
+            );
+          }}
         />
       )}
     </ThemedView>

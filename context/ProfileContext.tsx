@@ -24,7 +24,7 @@ interface ProfileContextType {
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
-const JAC_SERVER_URL = "http://100.64.0.113:8000";
+const JAC_SERVER_URL = "http://35.3.241.130:8000";
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<string[]>([]);

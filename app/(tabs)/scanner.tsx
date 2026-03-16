@@ -48,21 +48,71 @@ export default function CameraScreen() {
     setScanned(false);
   };
 
-  const addToInventoryAndReset = (name: string, barcode: string, isSafe: boolean) => {
-    const modeLabel = userProfile.name || "Guest";
-    
-    // 传给 context，确保包含谁扫的和是否安全
-    const added = addItem({ 
-      name, 
-      barcode, 
-      scannedBy: modeLabel, 
-      isSafe: isSafe        
-    });
+  // --- 新增：调用 AI 总结成分 ---
+  const fetchIngredientsSummary = async (ingredientsText: string) => {
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": "REPLACE_ME_WITH_YOUR_KEY", // 🚨 请在这里输入你的 API Key
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-3-haiku-20240307",
+          max_tokens: 300,
+          messages: [{ 
+            role: "user", 
+            content: `Summarize these food ingredients into a concise, readable English list. Highlight potential allergens. Original ingredients: ${ingredientsText}` 
+          }],
+        }),
+      });
+      const result = await response.json();
+      return result.content?.[0]?.text || "No ingredient summary available";
+    } catch (err) {
+      console.error("AI Summary Error:", err);
+      return "No ingredient summary available";
+    }
+  };
 
-    Alert.alert(
-      added ? "Added to Inventory" : "Already in Inventory",
-      `${name}\n(Mode: ${modeLabel})`,
-      [{ text: "OK", onPress: resetScanner }]
+  // --- 修改：添加至清单并处理保质期输入 ---
+  const prepareAddToInventory = async (name: string, barcode: string, isSafe: boolean, rawIngredients: string) => {
+    setLoadingAI(true);
+    
+    // 1. 获取 AI 总结
+    const summary = await fetchIngredientsSummary(rawIngredients);
+    setLoadingAI(false);
+
+    // 2. 弹出保质期输入框 (输入天数)
+    Alert.prompt(
+      "Setting Expiry Date",
+      "How many days can this food be stored? (Please enter a number)",
+      [
+        { text: "Cancel", onPress: resetScanner, style: "cancel" },
+        {
+          text: "Add",
+          onPress: (days: string | undefined) => {
+            const daysNum = parseInt(days || "7"); // 默认7天
+            const expiryTimestamp = Date.now() + daysNum * 24 * 60 * 60 * 1000;
+            
+            const added = addItem({ 
+              name, 
+              barcode, 
+              scannedBy: userProfile.name || "Guest", 
+              isSafe,
+              expiryDate: expiryTimestamp,
+              ingredientsSummary: summary
+            });
+
+            if (added) {
+              Alert.alert("Added", `${name} has been added to inventory.\nEstimated expiry date: ${new Date(expiryTimestamp).toLocaleDateString()}`, 
+              [{ text: "OK", onPress: resetScanner }]);
+            }
+          }
+        }
+      ],
+      "plain-text",
+      "7" // 默认输入 7
     );
   };
 
@@ -73,7 +123,7 @@ export default function CameraScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "REPLACE_ME", 
+          "x-api-key": "REPLACE_ME_WITH_YOUR_KEY", 
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
@@ -85,9 +135,9 @@ export default function CameraScreen() {
       const result = await response.json();
       const rawText = result.content?.[0]?.text || "{}";
       const data = JSON.parse(rawText);
-      Alert.alert("AI Recommendation", `Try: ${data.recommendation}\nBrand: ${data.brand}`, [{ text: "OK", onPress: resetScanner }]);
+      Alert.alert("AI Recommendation", `You can try: ${data.recommendation}\nBrand: ${data.brand}`, [{ text: "OK", onPress: resetScanner }]);
     } catch {
-      Alert.alert("AI Error", "Could not get recommendation.");
+      Alert.alert("AI Error", "Failed to fetch recommendation");
       resetScanner();
     } finally {
       setLoadingAI(false);
@@ -103,12 +153,12 @@ export default function CameraScreen() {
       .then((res) => res.json())
       .then((json) => {
         if (json.status !== 1) {
-          Alert.alert("Not Found", "Barcode not recognized", [{ text: "Retry", onPress: resetScanner }]);
+          Alert.alert("Not Found", "Barcode not recognized", [{ text: "Try Again", onPress: resetScanner }]);
           return;
         }
 
         const product = json.product;
-        const name = product.product_name || "Unknown";
+        const name = product.product_name || "Unknown Product";
         const ingredients = (product.ingredients_text || "").toLowerCase();
         const currentMode = userProfile.name || "Guest";
 
@@ -126,20 +176,20 @@ export default function CameraScreen() {
         if (matched.length > 0) {
           Alert.alert(
             "⚠️ Warning (Mode: " + currentMode + ")", 
-            `${name}\n\nDetected: ${matched.join(", ")}`, 
+            `${name}\n\nDetected ingredients: ${matched.join(", ")}`, 
             [
               { text: "Back", style: "cancel", onPress: resetScanner },
-              { text: "Add Anyway", onPress: () => addToInventoryAndReset(name, data, false) },
-              { text: "Find Alternative", onPress: () => fetchAIRecommendation(name, matched.join(",")) },
+              { text: "Still Add", onPress: () => prepareAddToInventory(name, data, false, ingredients) },
+              { text: "Find Alternatives", onPress: () => fetchAIRecommendation(name, matched.join(",")) },
             ]
           );
         } else {
           Alert.alert(
-            "Safe to Eat ✅", 
-            `Product: ${name}\nMode: ${currentMode}\n\nNo allergens detected for your profile.`,
+            "Safe ✅", 
+            `Product: ${name}\nCurrent Mode: ${currentMode}\n\nNo allergens detected.`,
             [
               { text: "Back", style: "cancel", onPress: resetScanner },
-              { text: "Add to Inventory", onPress: () => addToInventoryAndReset(name, data, true) }
+              { text: "Add to Inventory", onPress: () => prepareAddToInventory(name, data, true, ingredients) }
             ]
           );
         }
@@ -150,10 +200,11 @@ export default function CameraScreen() {
       });
   };
 
-  if (!permission?.granted) return <View style={styles.center}><Text>Camera permission required</Text></View>;
+  if (!permission?.granted) return <View style={styles.center}><Text>需要相机权限</Text></View>;
 
   return (
     <View style={styles.container}>
+      {/* 顶部 Profile 信息栏 */}
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.headerLabel}>Current Mode</Text>
@@ -167,7 +218,7 @@ export default function CameraScreen() {
                 </View>
               ))
             ) : (
-              <Text style={styles.headerSubtext}>{userProfile.name === "Baby" ? "Baby Safety Rules Active" : "No Allergens"}</Text>
+              <Text style={styles.headerSubtext}>{userProfile.name === "Baby" ? "Baby safety mode is active" : "No allergen restrictions"}</Text>
             )}
           </ScrollView>
         </View>
@@ -189,13 +240,13 @@ export default function CameraScreen() {
           <View style={[styles.corner, styles.cornerBL]} />
           <View style={[styles.corner, styles.cornerBR]} />
         </View>
-        <Text style={styles.scanText}>Align barcode within the frame</Text>
+        <Text style={styles.scanText}>Please scan the barcode</Text>
       </View>
 
       {showProfiles && (
         <View style={styles.overlay}>
           <View style={styles.profileBox}>
-            <Text style={styles.profileTitle}>Select Profile</Text>
+            <Text style={styles.profileTitle}>Select Member</Text>
             {profiles.map((p) => (
               <TouchableOpacity
                 key={p}
@@ -219,7 +270,7 @@ export default function CameraScreen() {
               }}
             >
               <Text style={[styles.profileText, { color: "#16A34A", fontWeight: "bold" }]}>
-                + Create New Profile
+                + Create New Member
               </Text>
             </TouchableOpacity>
 
@@ -276,13 +327,11 @@ const styles = StyleSheet.create({
   profileTextActive: { color: "#2f95dc", fontWeight: "bold" },
   cancel: { marginTop: 10, alignItems: "center" },
   fullLoading: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", zIndex: 999 },
-
-  // 👇 补充在原有 styles 里面
   scannerOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 1, // 确保在摄像头上面
+    zIndex: 1,
   },
   scannerBox: {
     width: 250,
@@ -303,13 +352,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 40,
     height: 40,
-    borderColor: "#10B981", // 酷炫的绿色边框
+    borderColor: "#10B981", 
     borderWidth: 5,
   },
   cornerTL: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 20 },
   cornerTR: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 20 },
   cornerBL: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 20 },
   cornerBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 20 },
-
-
 });
