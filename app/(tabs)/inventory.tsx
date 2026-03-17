@@ -1,49 +1,132 @@
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useInventory } from '@/context/inventory';
-import { Ionicons } from '@expo/vector-icons';
-import { Alert, FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { useInventory } from "@/context/inventory";
+import { useProfile } from "@/context/ProfileContext";
+import { Ionicons } from "@expo/vector-icons";
+import { useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
 
 export default function InventoryScreen() {
-  const { items, removeItem, clear } = useInventory();
+  const { items, removeItem, clear, runRecallCheckForCurrentProfile } =
+    useInventory();
+  const { profile } = useProfile();
+  const [checkingRecall, setCheckingRecall] = useState(false);
 
-  // 格式化日期显示
   const formatDate = (timestamp?: number) => {
-    if (!timestamp) return 'No Date';
+    if (!timestamp) return "No Date";
     return new Date(timestamp).toLocaleDateString();
   };
 
-  // 查看 AI 成分总结详情
-  const showIngredientsDetail = (name: string, summary?: string) => {
+  const showIngredientsDetail = (
+    name: string,
+    summary?: string,
+    recallTitle?: string,
+    recallReason?: string,
+  ) => {
+    const recallBlock =
+      recallTitle || recallReason
+        ? `\n\nRecall Alert:\n${recallTitle || "Recalled product"}${
+            recallReason ? `\nReason: ${recallReason}` : ""
+          }`
+        : "";
+
     Alert.alert(
       name,
-      summary || "No ingredients summary available.",
-      [{ text: "Close", style: "cancel" }]
+      `${summary || "No ingredients summary available."}${recallBlock}`,
+      [{ text: "Close", style: "cancel" }],
     );
+  };
+
+  const handleRecallCheck = async () => {
+    if (!profile.name || profile.name === "Guest") {
+      Alert.alert(
+        "No Profile Selected",
+        "Please switch to a profile before checking recalls.",
+      );
+      return;
+    }
+
+    setCheckingRecall(true);
+    try {
+      await runRecallCheckForCurrentProfile();
+      Alert.alert(
+        "Recall Check Complete",
+        `Finished checking recalls for ${profile.name}.`,
+      );
+    } catch {
+      Alert.alert("Error", "Failed to check recall information.");
+    } finally {
+      setCheckingRecall(false);
+    }
   };
 
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
-        <ThemedText type="title">Inventory</ThemedText>
+        <View>
+          <ThemedText type="title">Inventory</ThemedText>
+          <ThemedText style={styles.profileLabel}>
+            Current profile: {profile.name || "Guest"}
+          </ThemedText>
+        </View>
+
         <Pressable
           style={styles.clearBtn}
           onPress={() => {
             if (items.length === 0) return;
-            Alert.alert('Clear inventory?', 'This will remove all items.', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Clear All', style: 'destructive', onPress: clear },
-            ]);
+            Alert.alert(
+              "Clear inventory?",
+              `This will remove all items for ${profile.name || "Guest"}.`,
+              [
+                { text: "Cancel", style: "cancel" },
+                { text: "Clear All", style: "destructive", onPress: clear },
+              ],
+            );
           }}
         >
-          <ThemedText type="link" style={{ color: '#EF4444' }}>Clear All</ThemedText>
+          <ThemedText type="link" style={{ color: "#EF4444" }}>
+            Clear All
+          </ThemedText>
         </Pressable>
       </View>
+
+      <Pressable
+        style={[
+          styles.recallCheckButton,
+          checkingRecall && styles.recallCheckButtonDisabled,
+        ]}
+        onPress={handleRecallCheck}
+        disabled={checkingRecall}
+      >
+        {checkingRecall ? (
+          <ActivityIndicator color="#FFFFFF" />
+        ) : (
+          <>
+            <Ionicons
+              name="shield-checkmark-outline"
+              size={18}
+              color="#FFFFFF"
+            />
+            <ThemedText style={styles.recallCheckButtonText}>
+              Check Recall Now
+            </ThemedText>
+          </>
+        )}
+      </Pressable>
 
       {items.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name="basket-outline" size={64} color="#CBD5E1" />
-          <ThemedText style={styles.empty}>No items yet. Scan a product to start.</ThemedText>
+          <ThemedText style={styles.empty}>
+            No items yet for this profile. Scan a product to start.
+          </ThemedText>
         </View>
       ) : (
         <FlatList
@@ -51,64 +134,164 @@ export default function InventoryScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.list}
           renderItem={({ item }) => {
-            // 计算过期逻辑
-            const isExpired = item.expiryDate ? item.expiryDate < Date.now() : false;
-            const daysLeft = item.expiryDate 
-              ? Math.ceil((item.expiryDate - Date.now()) / (1000 * 60 * 60 * 24)) 
+            const isExpired = item.expiryDate
+              ? item.expiryDate < Date.now()
+              : false;
+            const daysLeft = item.expiryDate
+              ? Math.ceil(
+                  (item.expiryDate - Date.now()) / (1000 * 60 * 60 * 24),
+                )
               : null;
 
+            const isRecalled = item.recallStatus === "recalled";
+
             return (
-              <Pressable onPress={() => showIngredientsDetail(item.name, item.ingredientsSummary)}>
-                <ThemedView style={styles.card}>
+              <Pressable
+                onPress={() =>
+                  showIngredientsDetail(
+                    item.name,
+                    item.ingredientsSummary,
+                    item.recallTitle,
+                    item.recallReason,
+                  )
+                }
+              >
+                <ThemedView
+                  style={[styles.card, isRecalled && styles.recalledCard]}
+                >
+                  {isRecalled && (
+                    <View style={styles.recallBanner}>
+                      <Ionicons
+                        name="warning-outline"
+                        size={14}
+                        color="#FFFFFF"
+                      />
+                      <ThemedText style={styles.recallBannerText}>
+                        RECALLED
+                      </ThemedText>
+                    </View>
+                  )}
+
                   <View style={styles.row}>
                     <View style={{ flex: 1 }}>
                       <View style={styles.titleRow}>
-                        <ThemedText type="defaultSemiBold" style={styles.itemName} numberOfLines={1}>
+                        <ThemedText
+                          type="defaultSemiBold"
+                          style={styles.itemName}
+                          numberOfLines={1}
+                        >
                           {item.name}
                         </ThemedText>
-                        
-                        <View style={[
-                          styles.statusBadge, 
-                          { backgroundColor: item.isSafe ? '#DCFCE7' : '#FEE2E2' }
-                        ]}>
-                          <ThemedText style={[
-                            styles.statusText, 
-                            { color: item.isSafe ? '#16A34A' : '#EF4444' }
-                          ]}>
-                            {item.isSafe ? 'Safe' : 'Warning'}
+
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: isRecalled
+                                ? "#FEE2E2"
+                                : item.isSafe
+                                  ? "#DCFCE7"
+                                  : "#FEE2E2",
+                            },
+                          ]}
+                        >
+                          <ThemedText
+                            style={[
+                              styles.statusText,
+                              {
+                                color: isRecalled
+                                  ? "#DC2626"
+                                  : item.isSafe
+                                    ? "#16A34A"
+                                    : "#EF4444",
+                              },
+                            ]}
+                          >
+                            {isRecalled
+                              ? "Recall"
+                              : item.isSafe
+                                ? "Safe"
+                                : "Warning"}
                           </ThemedText>
                         </View>
                       </View>
-                      
-                      {/* 保质期提示栏 */}
+
+                      {isRecalled && (
+                        <View style={styles.infoRow}>
+                          <Ionicons
+                            name="alert-circle-outline"
+                            size={14}
+                            color="#DC2626"
+                          />
+                          <ThemedText style={styles.recallText}>
+                            {" "}
+                            {item.recallTitle ||
+                              "This product has been recalled."}
+                          </ThemedText>
+                        </View>
+                      )}
+
+                      {!!item.recallReason && (
+                        <View style={styles.infoRow}>
+                          <Ionicons
+                            name="document-text-outline"
+                            size={14}
+                            color="#DC2626"
+                          />
+                          <ThemedText style={styles.recallSubText}>
+                            {" "}
+                            Reason: {item.recallReason}
+                          </ThemedText>
+                        </View>
+                      )}
+
                       {item.expiryDate && (
                         <View style={styles.infoRow}>
-                          <Ionicons 
-                            name="time-outline" 
-                            size={14} 
-                            color={isExpired ? "#EF4444" : "#64748B"} 
+                          <Ionicons
+                            name="time-outline"
+                            size={14}
+                            color={isExpired ? "#EF4444" : "#64748B"}
                           />
-                          <ThemedText style={[
-                            styles.sub, 
-                            isExpired && { color: "#EF4444", fontWeight: "bold" }
-                          ]}>
-                            {" "}Best By: {formatDate(item.expiryDate)} 
-                            {" "}({isExpired ? "Expired" : `${daysLeft} days left`})
+                          <ThemedText
+                            style={[
+                              styles.sub,
+                              isExpired && {
+                                color: "#EF4444",
+                                fontWeight: "bold",
+                              },
+                            ]}
+                          >
+                            {" "}
+                            Best By: {formatDate(item.expiryDate)} (
+                            {isExpired ? "Expired" : `${daysLeft} days left`})
                           </ThemedText>
                         </View>
                       )}
 
                       <View style={styles.infoRow}>
-                        <Ionicons name="person-circle-outline" size={14} color="#64748B" />
+                        <Ionicons
+                          name="person-circle-outline"
+                          size={14}
+                          color="#64748B"
+                        />
                         <ThemedText style={styles.sub}>
-                          {" "}Scanned by: <ThemedText style={styles.boldSub}>{item.scannedBy || 'Guest'}</ThemedText>
+                          {" "}
+                          Scanned by:{" "}
+                          <ThemedText style={styles.boldSub}>
+                            {item.scannedBy || "Guest"}
+                          </ThemedText>
                         </ThemedText>
                       </View>
 
                       <View style={styles.infoRow}>
-                        <Ionicons name="barcode-outline" size={14} color="#64748B" />
+                        <Ionicons
+                          name="barcode-outline"
+                          size={14}
+                          color="#64748B"
+                        />
                         <ThemedText style={styles.sub}>
-                          {" "}Barcode: {item.barcode}
+                          {" "}
+                          Barcode: {item.barcode}
                         </ThemedText>
                       </View>
                     </View>
@@ -117,7 +300,11 @@ export default function InventoryScreen() {
                       style={styles.removeBtn}
                       onPress={() => removeItem(item.id)}
                     >
-                      <Ionicons name="trash-outline" size={20} color="#94A3B8" />
+                      <Ionicons
+                        name="trash-outline"
+                        size={20}
+                        color="#94A3B8"
+                      />
                     </Pressable>
                   </View>
                 </ThemedView>
@@ -131,30 +318,140 @@ export default function InventoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, paddingTop: 60, paddingHorizontal: 16, backgroundColor: '#1E293B' },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
+  container: {
+    flex: 1,
+    paddingTop: 60,
+    paddingHorizontal: 16,
+    backgroundColor: "#1E293B",
+  },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 20,
+  },
+  profileLabel: {
+    marginTop: 4,
+    color: "#CBD5E1",
+    fontSize: 13,
+  },
   clearBtn: { padding: 4 },
-  emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: -80 },
-  empty: { marginTop: 16, color: '#94A3B8', fontSize: 16 },
+
+  recallCheckButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#2563EB",
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  recallCheckButtonDisabled: {
+    opacity: 0.7,
+  },
+  recallCheckButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  emptyContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: -80,
+  },
+  empty: {
+    marginTop: 16,
+    color: "#94A3B8",
+    fontSize: 16,
+    textAlign: "center",
+  },
   list: { paddingBottom: 40 },
-  card: { 
-    padding: 16, 
-    borderRadius: 16, 
-    marginBottom: 12, 
-    backgroundColor: '#FFFFFF',
+  card: {
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "transparent",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 10,
-    elevation: 3 
+    elevation: 3,
   },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
-  itemName: { fontSize: 17, flex: 1, marginRight: 8, color: '#1E293B' },
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 8 },
-  statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  infoRow: { flexDirection: 'row', alignItems: 'center', marginTop: 5 },
-  sub: { fontSize: 13, color: '#64748B' },
-  boldSub: { fontWeight: '600', color: '#334155' },
-  removeBtn: { padding: 10, backgroundColor: '#F1F5F9', borderRadius: 12, marginLeft: 8 },
+  recalledCard: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FFF7F7",
+  },
+  recallBanner: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#DC2626",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  recallBannerText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  itemName: {
+    fontSize: 17,
+    flex: 1,
+    marginRight: 8,
+    color: "#1E293B",
+  },
+  statusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    textTransform: "uppercase",
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 5,
+  },
+  sub: {
+    fontSize: 13,
+    color: "#64748B",
+  },
+  boldSub: {
+    fontWeight: "600",
+    color: "#334155",
+  },
+  recallText: {
+    fontSize: 13,
+    color: "#DC2626",
+    fontWeight: "700",
+  },
+  recallSubText: {
+    fontSize: 13,
+    color: "#B91C1C",
+  },
+  removeBtn: {
+    padding: 10,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    marginLeft: 8,
+  },
 });

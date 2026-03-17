@@ -17,14 +17,33 @@ interface ProfileContextType {
   login: (username: string) => Promise<boolean>;
   logout: () => Promise<void>;
   switchProfile: (name: string) => Promise<void>;
-  // 加上 onSuccess 回调函数参数
   deleteProfile: (name: string, onSuccess?: () => void) => Promise<void>;
   updateProfileLocally: (data: Partial<ProfileData>) => void;
   syncToJac: () => Promise<void>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
-const JAC_SERVER_URL = "http://35.3.241.130:8000";
+
+const BACKEND_BASE_URL = "http://35.2.54.101:8000";
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 4000,
+) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<string[]>([]);
@@ -44,39 +63,76 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     try {
       const savedProfiles = await AsyncStorage.getItem("profiles");
       const savedCurrent = await AsyncStorage.getItem("currentUser");
-      if (savedProfiles) setProfiles(JSON.parse(savedProfiles));
+
+      if (savedProfiles) {
+        setProfiles(JSON.parse(savedProfiles));
+      }
+
       if (savedCurrent) {
         const cached = await AsyncStorage.getItem(`cache_${savedCurrent}`);
-        if (cached) setProfile(JSON.parse(cached));
-        await fetchProfileFromJac(savedCurrent);
+        if (cached) {
+          setProfile(JSON.parse(cached));
+        } else {
+          setProfile({
+            name: savedCurrent,
+            location: "",
+            allergens: [],
+            dietary_preferences: [],
+          });
+        }
       }
     } catch (e) {
       console.error("Initialization error", e);
     } finally {
+      // 先结束 loading，不等远程
       setIsLoading(false);
     }
+
+    // 放到 finally 后面后台刷新
+    try {
+      const savedCurrent = await AsyncStorage.getItem("currentUser");
+      if (savedCurrent) {
+        fetchProfileFromJac(savedCurrent).catch(() => {
+          console.log("Background profile refresh failed");
+        });
+      }
+    } catch {}
   };
 
   const fetchProfileFromJac = async (username: string) => {
     try {
-      const res = await fetch(`${JAC_SERVER_URL}/walker/get_user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: username }),
-      });
-      const json = await res.json();
-      const payload = json?.data?.result?.response_data;
+      const res = await fetchWithTimeout(
+        `${BACKEND_BASE_URL}/walker/get_user`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: username }),
+        },
+        4000,
+      );
 
-      if (payload && payload.status === "success" && payload.data) {
-        const serverData: ProfileData = {
-          name: username,
-          location: payload.data.location || "",
-          allergens: Array.isArray(payload.data.allergens) ? payload.data.allergens : [],
-          dietary_preferences: Array.isArray(payload.data.dietary_preferences) ? payload.data.dietary_preferences : [],
-        };
-        setProfile(serverData);
-        await AsyncStorage.setItem(`cache_${username}`, JSON.stringify(serverData));
+      const json = await res.json();
+
+      if (json?.status !== "success" || !json?.data) {
+        return;
       }
+
+      const serverData: ProfileData = {
+        name: username,
+        location: json.data.location || "",
+        allergens: Array.isArray(json.data.allergens)
+          ? json.data.allergens
+          : [],
+        dietary_preferences: Array.isArray(json.data.dietary_preferences)
+          ? json.data.dietary_preferences
+          : [],
+      };
+
+      setProfile(serverData);
+      await AsyncStorage.setItem(
+        `cache_${username}`,
+        JSON.stringify(serverData),
+      );
     } catch (e) {
       console.log("Network error, kept local data.");
     }
@@ -85,134 +141,201 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const login = async (username: string) => {
     const trimmedName = username.trim();
     if (!trimmedName) return false;
+
     setIsLoading(true);
+
     try {
       const savedProfiles = await AsyncStorage.getItem("profiles");
       let profileList = savedProfiles ? JSON.parse(savedProfiles) : [];
+
       if (!profileList.includes(trimmedName)) {
         profileList = [...profileList, trimmedName];
         await AsyncStorage.setItem("profiles", JSON.stringify(profileList));
       }
+
       setProfiles(profileList);
       await AsyncStorage.setItem("currentUser", trimmedName);
 
       const cached = await AsyncStorage.getItem(`cache_${trimmedName}`);
-      if (cached) setProfile(JSON.parse(cached));
-      else setProfile({ name: trimmedName, location: "", allergens: [], dietary_preferences: [] });
+      if (cached) {
+        setProfile(JSON.parse(cached));
+      } else {
+        const emptyProfile = {
+          name: trimmedName,
+          location: "",
+          allergens: [],
+          dietary_preferences: [],
+        };
+        setProfile(emptyProfile);
+        await AsyncStorage.setItem(
+          `cache_${trimmedName}`,
+          JSON.stringify(emptyProfile),
+        );
+      }
 
-      await fetchProfileFromJac(trimmedName);
+      setIsLoading(false);
+
+      fetchProfileFromJac(trimmedName).catch(() => {
+        console.log("Background profile refresh failed");
+      });
+
       return true;
     } catch {
       return false;
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const switchProfile = async (name: string) => {
     setIsLoading(true);
+
     try {
       await AsyncStorage.setItem("currentUser", name);
-      // 1. 先尝试读取目标用户的本地缓存
+
       const cached = await AsyncStorage.getItem(`cache_${name}`);
       if (cached) {
         setProfile(JSON.parse(cached));
       } else {
-        // 2. 如果没有缓存，给个干净的初始状态
-        setProfile({ name, location: "", allergens: [], dietary_preferences: [] });
+        const emptyProfile = {
+          name,
+          location: "",
+          allergens: [],
+          dietary_preferences: [],
+        };
+        setProfile(emptyProfile);
+        await AsyncStorage.setItem(
+          `cache_${name}`,
+          JSON.stringify(emptyProfile),
+        );
       }
-      // 3. 尝试从云端拉取最新数据覆盖
-      await fetchProfileFromJac(name);
-    } finally {
+
+      // 关键：本地数据一到，就结束 loading
+      setIsLoading(false);
+
+      // 后台刷新，不阻塞页面
+      fetchProfileFromJac(name).catch(() => {
+        console.log("Background profile refresh failed");
+      });
+    } catch {
       setIsLoading(false);
     }
   };
 
-  // 1. 这里加了 onSuccess 参数 👇
   const deleteProfile = async (name: string, onSuccess?: () => void) => {
-      Alert.alert(
-        "Confirm Delete",
-        `Are you sure you want to delete the profile "${name}"?`,
-        [
-          { text: "No", style: "cancel" },
-          {
-            text: "Yes, Delete",
-            style: "destructive",
-            onPress: async () => {
-              try {
-                // 1. 计算新的 profile 列表
-                const newProfiles = profiles.filter((p) => p !== name);
-                
-                // 2. 更新本地持久化存储
-                await AsyncStorage.setItem("profiles", JSON.stringify(newProfiles));
-                await AsyncStorage.removeItem(`cache_${name}`);
-                
-                // 3. 更新内存中的列表状态
-                setProfiles(newProfiles);
+    Alert.alert(
+      "Confirm Delete",
+      `Are you sure you want to delete the profile "${name}"?`,
+      [
+        { text: "No", style: "cancel" },
+        {
+          text: "Yes, Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const newProfiles = profiles.filter((p) => p !== name);
 
-                // 👇 🚨 关键新增：如果传入了清空商品的动作，就在这里执行！
-                if (onSuccess) {
-                  onSuccess();
-                }
+              await AsyncStorage.setItem(
+                "profiles",
+                JSON.stringify(newProfiles),
+              );
+              await AsyncStorage.removeItem(`cache_${name}`);
 
-                // 4. 处理跳转逻辑（如果你删掉的是当前正在用的用户）
-                if (profile.name === name) {
-                  if (newProfiles.length > 0) {
-                    // 如果还有其他人，切换到第一个
-                    const firstProfile = newProfiles[0];
-                    await switchProfile(firstProfile);
-                    Alert.alert("Profile Deleted", `Switched to ${firstProfile}`);
-                  } else {
-                    // 如果全删光了，才去登录页
-                    await logout();
-                    router.replace("/login");
-                  }
-                }
-              } catch (e) {
-                console.error("Delete error", e);
-                Alert.alert("Error", "Failed to delete profile");
+              setProfiles(newProfiles);
+
+              if (onSuccess) {
+                onSuccess();
               }
-            },
+
+              if (profile.name === name) {
+                if (newProfiles.length > 0) {
+                  const firstProfile = newProfiles[0];
+                  await switchProfile(firstProfile);
+                  Alert.alert("Profile Deleted", `Switched to ${firstProfile}`);
+                } else {
+                  await logout();
+                  router.replace("/login");
+                }
+              }
+            } catch (e) {
+              console.error("Delete error", e);
+              Alert.alert("Error", "Failed to delete profile");
+            }
           },
-        ]
-      );
-    };
+        },
+      ],
+    );
+  };
 
   const syncToJac = async () => {
     try {
-      const res = await fetch(`${JAC_SERVER_URL}/walker/create_or_update_user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(profile),
-      });
-      if (res.ok) {
-        await AsyncStorage.setItem(`cache_${profile.name}`, JSON.stringify(profile));
-        Alert.alert("Success 🎉", "Settings saved!");
+      const res = await fetchWithTimeout(
+        `${BACKEND_BASE_URL}/walker/create_or_update_user`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profile),
+        },
+        5000,
+      );
+
+      const json = await res.json();
+      console.log("syncToJac response:", json);
+
+      if (!res.ok || json?.status !== "success") {
+        Alert.alert("Error", json?.message || "Cloud sync failed");
+        return;
       }
-    } catch {
+
+      await AsyncStorage.setItem(
+        `cache_${profile.name}`,
+        JSON.stringify(profile),
+      );
+
+      Alert.alert("Success 🎉", "Settings saved!");
+    } catch (e) {
+      console.log("syncToJac error:", e);
       Alert.alert("Error", "Cloud sync failed");
     }
   };
 
   const logout = async () => {
     await AsyncStorage.removeItem("currentUser");
-    setProfile({ name: "", location: "", allergens: [], dietary_preferences: [] });
+    setProfile({
+      name: "",
+      location: "",
+      allergens: [],
+      dietary_preferences: [],
+    });
   };
 
   const updateProfileLocally = (data: Partial<ProfileData>) => {
     setProfile((prev) => {
       const newProfile = { ...prev, ...data };
-      // 🚨 关键修复：每次本地修改（点选过敏原），立刻存入本地缓存！
-      // 这样就算没点 Save to Cloud，直接切换账号数据也不会丢了。
+
       if (newProfile.name) {
-        AsyncStorage.setItem(`cache_${newProfile.name}`, JSON.stringify(newProfile)).catch(console.error);
+        AsyncStorage.setItem(
+          `cache_${newProfile.name}`,
+          JSON.stringify(newProfile),
+        ).catch(console.error);
       }
+
       return newProfile;
     });
   };
 
   return (
-    <ProfileContext.Provider value={{ profile, profiles, isLoading, login, logout, switchProfile, deleteProfile, updateProfileLocally, syncToJac }}>
+    <ProfileContext.Provider
+      value={{
+        profile,
+        profiles,
+        isLoading,
+        login,
+        logout,
+        switchProfile,
+        deleteProfile,
+        updateProfileLocally,
+        syncToJac,
+      }}
+    >
       {children}
     </ProfileContext.Provider>
   );

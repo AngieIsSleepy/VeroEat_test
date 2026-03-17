@@ -1,0 +1,13 @@
+{
+  "profiles_by_user": {
+    "Rania": {
+      "name": "Rania",
+      "location": "Ann Arbor, Michigan",
+      "allergens": [
+        "milk",
+        "egg"
+      ],
+      "dietary_preferences": []
+    }
+  }
+}

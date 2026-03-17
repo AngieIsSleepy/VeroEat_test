@@ -34,7 +34,12 @@ export default function CameraScreen() {
   const [loadingAI, setLoadingAI] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
 
-  const { profile: userProfile, profiles, switchProfile, isLoading: isContextLoading } = useProfile();
+  const {
+    profile: userProfile,
+    profiles,
+    switchProfile,
+    isLoading: isContextLoading,
+  } = useProfile();
   const { addItem } = useInventory();
 
   const isProcessing = useRef(false);
@@ -55,16 +60,18 @@ export default function CameraScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "REPLACE_ME_WITH_YOUR_KEY", // 🚨 请在这里输入你的 API Key
+          "x-api-key": "YOUR_ANTHROPIC_API_KEY", // 🚨 请在这里输入你的 API Key
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
           model: "claude-3-haiku-20240307",
           max_tokens: 300,
-          messages: [{ 
-            role: "user", 
-            content: `Summarize these food ingredients into a concise, readable English list. Highlight potential allergens. Original ingredients: ${ingredientsText}` 
-          }],
+          messages: [
+            {
+              role: "user",
+              content: `Summarize these food ingredients into a concise, readable English list. Highlight potential allergens. Original ingredients: ${ingredientsText}`,
+            },
+          ],
         }),
       });
       const result = await response.json();
@@ -76,9 +83,14 @@ export default function CameraScreen() {
   };
 
   // --- 修改：添加至清单并处理保质期输入 ---
-  const prepareAddToInventory = async (name: string, barcode: string, isSafe: boolean, rawIngredients: string) => {
+  const prepareAddToInventory = async (
+    name: string,
+    barcode: string,
+    isSafe: boolean,
+    rawIngredients: string,
+  ) => {
     setLoadingAI(true);
-    
+
     // 1. 获取 AI 总结
     const summary = await fetchIngredientsSummary(rawIngredients);
     setLoadingAI(false);
@@ -94,48 +106,63 @@ export default function CameraScreen() {
           onPress: (days: string | undefined) => {
             const daysNum = parseInt(days || "7"); // 默认7天
             const expiryTimestamp = Date.now() + daysNum * 24 * 60 * 60 * 1000;
-            
-            const added = addItem({ 
-              name, 
-              barcode, 
-              scannedBy: userProfile.name || "Guest", 
+
+            const added = addItem({
+              name,
+              barcode,
+              scannedBy: userProfile.name || "Guest",
               isSafe,
               expiryDate: expiryTimestamp,
-              ingredientsSummary: summary
+              ingredientsSummary: summary,
             });
 
             if (added) {
-              Alert.alert("Added", `${name} has been added to inventory.\nEstimated expiry date: ${new Date(expiryTimestamp).toLocaleDateString()}`, 
-              [{ text: "OK", onPress: resetScanner }]);
+              Alert.alert(
+                "Added",
+                `${name} has been added to inventory.\nEstimated expiry date: ${new Date(expiryTimestamp).toLocaleDateString()}`,
+                [{ text: "OK", onPress: resetScanner }],
+              );
             }
-          }
-        }
+          },
+        },
       ],
       "plain-text",
-      "7" // 默认输入 7
+      "7", // 默认输入 7
     );
   };
 
-  const fetchAIRecommendation = async (unsafeProduct: string, reason: string) => {
+  const fetchAIRecommendation = async (
+    unsafeProduct: string,
+    reason: string,
+  ) => {
     setLoadingAI(true);
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "REPLACE_ME_WITH_YOUR_KEY", 
+          "x-api-key": "YOUR_ANTHROPIC_API_KEY",
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
           model: "claude-3-haiku-20240307",
           max_tokens: 200,
-          messages: [{ role: "user", content: `Product: ${unsafeProduct}. Issue: ${reason}. Suggest 1 safe alternative. Return ONLY JSON: {"recommendation": "name", "brand": "brand"}` }],
+          messages: [
+            {
+              role: "user",
+              content: `Product: ${unsafeProduct}. Issue: ${reason}. Suggest 1 safe alternative. Return ONLY JSON: {"recommendation": "name", "brand": "brand"}`,
+            },
+          ],
         }),
       });
       const result = await response.json();
       const rawText = result.content?.[0]?.text || "{}";
       const data = JSON.parse(rawText);
-      Alert.alert("AI Recommendation", `You can try: ${data.recommendation}\nBrand: ${data.brand}`, [{ text: "OK", onPress: resetScanner }]);
+      Alert.alert(
+        "AI Recommendation",
+        `You can try: ${data.recommendation}\nBrand: ${data.brand}`,
+        [{ text: "OK", onPress: resetScanner }],
+      );
     } catch {
       Alert.alert("AI Error", "Failed to fetch recommendation");
       resetScanner();
@@ -153,7 +180,9 @@ export default function CameraScreen() {
       .then((res) => res.json())
       .then((json) => {
         if (json.status !== 1) {
-          Alert.alert("Not Found", "Barcode not recognized", [{ text: "Try Again", onPress: resetScanner }]);
+          Alert.alert("Not Found", "Barcode not recognized", [
+            { text: "Try Again", onPress: resetScanner },
+          ]);
           return;
         }
 
@@ -175,22 +204,33 @@ export default function CameraScreen() {
 
         if (matched.length > 0) {
           Alert.alert(
-            "⚠️ Warning (Mode: " + currentMode + ")", 
-            `${name}\n\nDetected ingredients: ${matched.join(", ")}`, 
+            "⚠️ Warning (Mode: " + currentMode + ")",
+            `${name}\n\nDetected ingredients: ${matched.join(", ")}`,
             [
               { text: "Back", style: "cancel", onPress: resetScanner },
-              { text: "Still Add", onPress: () => prepareAddToInventory(name, data, false, ingredients) },
-              { text: "Find Alternatives", onPress: () => fetchAIRecommendation(name, matched.join(",")) },
-            ]
+              {
+                text: "Still Add",
+                onPress: () =>
+                  prepareAddToInventory(name, data, false, ingredients),
+              },
+              {
+                text: "Find Alternatives",
+                onPress: () => fetchAIRecommendation(name, matched.join(",")),
+              },
+            ],
           );
         } else {
           Alert.alert(
-            "Safe ✅", 
+            "Safe ✅",
             `Product: ${name}\nCurrent Mode: ${currentMode}\n\nNo allergens detected.`,
             [
               { text: "Back", style: "cancel", onPress: resetScanner },
-              { text: "Add to Inventory", onPress: () => prepareAddToInventory(name, data, true, ingredients) }
-            ]
+              {
+                text: "Add to Inventory",
+                onPress: () =>
+                  prepareAddToInventory(name, data, true, ingredients),
+              },
+            ],
           );
         }
       })
@@ -200,7 +240,12 @@ export default function CameraScreen() {
       });
   };
 
-  if (!permission?.granted) return <View style={styles.center}><Text>需要相机权限</Text></View>;
+  if (!permission?.granted)
+    return (
+      <View style={styles.center}>
+        <Text>需要相机权限</Text>
+      </View>
+    );
 
   return (
     <View style={styles.container}>
@@ -209,8 +254,12 @@ export default function CameraScreen() {
         <View style={{ flex: 1, marginRight: 10 }}>
           <Text style={styles.headerLabel}>Current Mode</Text>
           <Text style={styles.headerValue}>{userProfile.name || "Guest"}</Text>
-          
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginTop: 4 }}>
+
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ marginTop: 4 }}
+          >
             {userProfile.allergens.length > 0 ? (
               userProfile.allergens.map((a) => (
                 <View key={a} style={styles.allergenChip}>
@@ -218,12 +267,19 @@ export default function CameraScreen() {
                 </View>
               ))
             ) : (
-              <Text style={styles.headerSubtext}>{userProfile.name === "Baby" ? "Baby safety mode is active" : "No allergen restrictions"}</Text>
+              <Text style={styles.headerSubtext}>
+                {userProfile.name === "Baby"
+                  ? "Baby safety mode is active"
+                  : "No allergen restrictions"}
+              </Text>
             )}
           </ScrollView>
         </View>
 
-        <TouchableOpacity style={styles.switchButton} onPress={() => setShowProfiles(true)}>
+        <TouchableOpacity
+          style={styles.switchButton}
+          onPress={() => setShowProfiles(true)}
+        >
           <Text style={styles.buttonText}>Switch</Text>
         </TouchableOpacity>
       </View>
@@ -250,32 +306,56 @@ export default function CameraScreen() {
             {profiles.map((p) => (
               <TouchableOpacity
                 key={p}
-                style={[styles.profileItem, p === userProfile.name && styles.profileItemActive]}
+                style={[
+                  styles.profileItem,
+                  p === userProfile.name && styles.profileItemActive,
+                ]}
                 onPress={async () => {
                   setShowProfiles(false);
                   await switchProfile(p);
                 }}
               >
-                <Text style={[styles.profileText, p === userProfile.name && styles.profileTextActive]}>
-                    {p} {p === userProfile.name ? "✓" : ""}
+                <Text
+                  style={[
+                    styles.profileText,
+                    p === userProfile.name && styles.profileTextActive,
+                  ]}
+                >
+                  {p} {p === userProfile.name ? "✓" : ""}
                 </Text>
               </TouchableOpacity>
             ))}
 
             <TouchableOpacity
-              style={[styles.profileItem, { backgroundColor: "#F0FDF4", marginTop: 10, borderRadius: 10 }]}
+              style={[
+                styles.profileItem,
+                { backgroundColor: "#F0FDF4", marginTop: 10, borderRadius: 10 },
+              ]}
               onPress={() => {
                 setShowProfiles(false);
-                router.push({ pathname: "/login", params: { canGoBack: "true" } });
+                router.push({
+                  pathname: "/login",
+                  params: { canGoBack: "true" },
+                });
               }}
             >
-              <Text style={[styles.profileText, { color: "#16A34A", fontWeight: "bold" }]}>
+              <Text
+                style={[
+                  styles.profileText,
+                  { color: "#16A34A", fontWeight: "bold" },
+                ]}
+              >
                 + Create New Member
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity onPress={() => setShowProfiles(false)} style={styles.cancel}>
-              <Text style={{ color: "red", fontWeight: "bold", marginTop: 10 }}>Cancel</Text>
+            <TouchableOpacity
+              onPress={() => setShowProfiles(false)}
+              style={styles.cancel}
+            >
+              <Text style={{ color: "red", fontWeight: "bold", marginTop: 10 }}>
+                Cancel
+              </Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -316,17 +396,44 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   allergenChipText: { color: "#fff", fontSize: 11, fontWeight: "600" },
-  switchButton: { backgroundColor: "#2f95dc", paddingHorizontal: 15, paddingVertical: 10, borderRadius: 10 },
+  switchButton: {
+    backgroundColor: "#2f95dc",
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
   buttonText: { color: "#fff", fontWeight: "bold" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", zIndex: 100 },
-  profileBox: { backgroundColor: "white", padding: 25, borderRadius: 20, width: "80%" },
-  profileTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 100,
+  },
+  profileBox: {
+    backgroundColor: "white",
+    padding: 25,
+    borderRadius: 20,
+    width: "80%",
+  },
+  profileTitle: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 15,
+    textAlign: "center",
+  },
   profileItem: { padding: 15, borderBottomWidth: 1, borderColor: "#eee" },
   profileItemActive: { backgroundColor: "#f0f9ff" },
   profileText: { fontSize: 16, textAlign: "center" },
   profileTextActive: { color: "#2f95dc", fontWeight: "bold" },
   cancel: { marginTop: 10, alignItems: "center" },
-  fullLoading: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", zIndex: 999 },
+  fullLoading: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 999,
+  },
   scannerOverlay: {
     ...StyleSheet.absoluteFillObject,
     justifyContent: "center",
@@ -352,11 +459,35 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: 40,
     height: 40,
-    borderColor: "#10B981", 
+    borderColor: "#10B981",
     borderWidth: 5,
   },
-  cornerTL: { top: 0, left: 0, borderBottomWidth: 0, borderRightWidth: 0, borderTopLeftRadius: 20 },
-  cornerTR: { top: 0, right: 0, borderBottomWidth: 0, borderLeftWidth: 0, borderTopRightRadius: 20 },
-  cornerBL: { bottom: 0, left: 0, borderTopWidth: 0, borderRightWidth: 0, borderBottomLeftRadius: 20 },
-  cornerBR: { bottom: 0, right: 0, borderTopWidth: 0, borderLeftWidth: 0, borderBottomRightRadius: 20 },
+  cornerTL: {
+    top: 0,
+    left: 0,
+    borderBottomWidth: 0,
+    borderRightWidth: 0,
+    borderTopLeftRadius: 20,
+  },
+  cornerTR: {
+    top: 0,
+    right: 0,
+    borderBottomWidth: 0,
+    borderLeftWidth: 0,
+    borderTopRightRadius: 20,
+  },
+  cornerBL: {
+    bottom: 0,
+    left: 0,
+    borderTopWidth: 0,
+    borderRightWidth: 0,
+    borderBottomLeftRadius: 20,
+  },
+  cornerBR: {
+    bottom: 0,
+    right: 0,
+    borderTopWidth: 0,
+    borderLeftWidth: 0,
+    borderBottomRightRadius: 20,
+  },
 });

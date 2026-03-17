@@ -1,0 +1,11 @@
+{
+  "inventory_by_user": {
+    "Rania": []
+  },
+  "recall_settings_by_user": {
+    "Rania": {
+      "recallAlertsEnabled": true,
+      "expoPushToken": null
+    }
+  }
+}
