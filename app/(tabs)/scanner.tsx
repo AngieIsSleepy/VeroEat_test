@@ -6,12 +6,15 @@ import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+
+import { styles } from './scanner.styles';
 
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   peanuts: ["peanut", "peanuts", "groundnut"],
@@ -27,13 +30,22 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
 };
 
 const BABY_RULES = ["honey", "sugar", "salt", "palm oil"];
-
+interface ScanResult {
+  type: "safe" | "unsafe" | "not_found";
+  name: string;
+  barcode: string;
+  ingredients: string;
+  imageUrl: string | null;
+  matchedAllergens: string[];
+  currentMode: string;
+}
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [loadingAI, setLoadingAI] = useState(false);
   const [showProfiles, setShowProfiles] = useState(false);
-
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
   const {
     profile: userProfile,
     profiles,
@@ -51,6 +63,8 @@ export default function CameraScreen() {
   const resetScanner = () => {
     isProcessing.current = false;
     setScanned(false);
+    setScanResult(null); 
+    setShowDetails(false);
   };
 
   // --- 新增：调用 AI 总结成分 ---
@@ -60,7 +74,7 @@ export default function CameraScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "YOUR_ANTHROPIC_API_KEY", // 🚨 在这里输入你的 API Key
+          "x-api-key": "enter your API key", // 🚨 在这里输入你的 API Key
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
@@ -89,6 +103,7 @@ export default function CameraScreen() {
     isSafe: boolean,
     rawIngredients: string,
   ) => {
+    setScanResult(null);
     setLoadingAI(true);
 
     // 1. 获取 AI 总结
@@ -97,37 +112,69 @@ export default function CameraScreen() {
 
     // 2. 弹出保质期输入框 (输入天数)
     Alert.prompt(
-      "Setting Expiry Date",
-      "How many days can this food be stored? (Please enter a number)",
+      "Set Expiry Date?",
+      "Enter the exact expiration / best by date (e.g., MM/DD/YYYY or YYYY-MM-DD):",
       [
-        { text: "Cancel", onPress: resetScanner, style: "cancel" },
+        { 
+          text: "Skip", 
+          style: "cancel",
+          onPress: () => {
+            const added = addItem({
+              name,
+              barcode,
+              scannedBy: userProfile.name || "Guest",
+              isSafe,
+              expiryDate: undefined, // 没有过期时间
+              ingredientsSummary: summary,
+            });
+
+            if (added) {
+              Alert.alert(
+                "Added", 
+                `${name} has been added without an expiry date.`, 
+                [{ text: "OK", onPress: resetScanner }]
+              );
+            }
+          } 
+        },
         {
-          text: "Add",
-          onPress: (days: string | undefined) => {
-            const daysNum = parseInt(days || "7"); // 默认7天
-            const expiryTimestamp = Date.now() + daysNum * 24 * 60 * 60 * 1000;
+          text: "Save",
+          onPress: (dateString: string | undefined) => {
+            let expiryTimestamp = undefined;
+            
+            if (dateString && dateString.trim() !== "") {
+              const parsedDate = new Date(dateString);
+              if (!isNaN(parsedDate.getTime())) {
+                expiryTimestamp = parsedDate.getTime();
+              } else {
+                Alert.alert("Invalid Date", "Could not read the date. Item added without an expiry date.");
+              }
+            }
 
             const added = addItem({
               name,
               barcode,
               scannedBy: userProfile.name || "Guest",
               isSafe,
-              expiryDate: expiryTimestamp,
+              expiryDate: expiryTimestamp, 
               ingredientsSummary: summary,
             });
 
             if (added) {
+              const dateMsg = expiryTimestamp 
+                ? `\nExpiry date set to: ${new Date(expiryTimestamp).toLocaleDateString()}`
+                : `\nNo expiry date set.`;
+
               Alert.alert(
                 "Added",
-                `${name} has been added to inventory.\nEstimated expiry date: ${new Date(expiryTimestamp).toLocaleDateString()}`,
-                [{ text: "OK", onPress: resetScanner }],
+                `${name} has been added to inventory.${dateMsg}`,
+                [{ text: "OK", onPress: resetScanner }]
               );
             }
           },
         },
       ],
-      "plain-text",
-      "7", // 默认输入 7
+      "plain-text"
     );
   };
 
@@ -135,13 +182,14 @@ export default function CameraScreen() {
     unsafeProduct: string,
     reason: string,
   ) => {
+    setScanResult(null);
     setLoadingAI(true);
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "YOUR_ANTHROPIC_API_KEY",
+          "x-api-key": "enter your API key",
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
@@ -189,6 +237,8 @@ export default function CameraScreen() {
         const product = json.product;
         const name = product.product_name || "Unknown Product";
         const ingredients = (product.ingredients_text || "").toLowerCase();
+        const imageUrl = product.image_front_url || product.image_url || null;
+        
         const currentMode = userProfile.name || "Guest";
 
         let matched: string[] = [];
@@ -202,48 +252,92 @@ export default function CameraScreen() {
           });
         }
 
-        if (matched.length > 0) {
-          Alert.alert(
-            "⚠️ Warning (Mode: " + currentMode + ")",
-            `${name}\n\nDetected ingredients: ${matched.join(", ")}`,
-            [
-              { text: "Back", style: "cancel", onPress: resetScanner },
-              {
-                text: "Still Add",
-                onPress: () =>
-                  prepareAddToInventory(name, data, false, ingredients),
-              },
-              {
-                text: "Find Alternatives",
-                onPress: () => fetchAIRecommendation(name, matched.join(",")),
-              },
-            ],
-          );
-        } else {
-          Alert.alert(
-            "Safe ✅",
-            `Product: ${name}\nCurrent Mode: ${currentMode}\n\nNo allergens detected.`,
-            [
-              { text: "Back", style: "cancel", onPress: resetScanner },
-              {
-                text: "Add to Inventory",
-                onPress: () =>
-                  prepareAddToInventory(name, data, true, ingredients),
-              },
-            ],
-          );
-        }
+
+        setScanResult({
+          type: matched.length > 0 ? "unsafe" : "safe",
+          name,
+          barcode: data,
+          ingredients,
+          imageUrl,
+          matchedAllergens: matched,
+          currentMode,
+        });
       })
       .catch(() => {
         Alert.alert("Error", "Network request failed");
         resetScanner();
       });
   };
+  //       if (matched.length > 0) {
+  //         Alert.alert(
+  //           "⚠️ Warning (Mode: " + currentMode + ")",
+  //           `${name}\n\nDetected ingredients: ${matched.join(", ")}`,
+  //           [
+  //             { text: "Back", style: "cancel", onPress: resetScanner },
+  //             {
+  //               text: "Still Add",
+  //               onPress: () =>
+  //                 prepareAddToInventory(name, data, false, ingredients),
+  //             },
+  //             {
+  //               text: "Find Alternatives",
+  //               onPress: () => fetchAIRecommendation(name, matched.join(",")),
+  //             },
+  //           ],
+  //         );
+  //       } else {
+  //         Alert.alert(
+  //           "Safe ✅",
+  //           `Product: ${name}\nCurrent Mode: ${currentMode}\n\nNo allergens detected.`,
+  //           [
+  //             { text: "Back", style: "cancel", onPress: resetScanner },
+  //             {
+  //               text: "Add to Inventory",
+  //               onPress: () =>
+  //                 prepareAddToInventory(name, data, true, ingredients),
+  //             },
+  //           ],
+  //         );
+  //       }
+  //     })
+  //     .catch(() => {
+  //       Alert.alert("Error", "Network request failed");
+  //       resetScanner();
+  //     });
+  // };
+
+  const renderHighlightedIngredients = (text: string, matchedAllergens: string[]) => {
+    if (!text) return <Text style={{ color: "gray" }}>No ingredients listed.</Text>;
+    let dangerWords: string[] = [];
+    matchedAllergens.forEach((allergen) => {
+      if (BABY_RULES.includes(allergen)) {
+        dangerWords.push(allergen);
+      } else {
+        dangerWords.push(...(ALLERGEN_KEYWORDS[allergen] || [allergen]));
+      }
+    });
+    const parts = text.split(/([,\s().]+)/);
+
+    return parts.map((part, index) => {
+      const isDanger = dangerWords.some((w) => part.toLowerCase().includes(w));
+      return (
+        <Text
+          key={index}
+          style={{
+            color: isDanger ? "red" : "#333",
+            fontWeight: isDanger ? "bold" : "normal",
+          }}
+        >
+          {part}
+        </Text>
+      );
+    });
+  };
 
   if (!permission?.granted)
     return (
       <View style={styles.center}>
-        <Text>需要相机权限</Text>
+        <Text>Need Camera Permission</Text>
       </View>
     );
 
@@ -361,6 +455,79 @@ export default function CameraScreen() {
         </View>
       )}
 
+      {scanResult && (
+        <View style={styles.resultOverlay}>
+          <View style={styles.resultCard}>
+            <Text style={scanResult.type === "safe" ? styles.safeTitle : styles.warningTitle}>
+              {scanResult.type === "safe" ? "Safe ✅" : `⚠️ Warning (${scanResult.currentMode})`}
+            </Text>
+
+            {scanResult.imageUrl && (
+              <Image source={{ uri: scanResult.imageUrl }} style={styles.productImage} resizeMode="contain" />
+            )}
+
+            <Text style={styles.productName}>{scanResult.name}</Text>
+
+            {/* 警告信息 */}
+            {scanResult.type === "unsafe" ? (
+              <Text style={styles.warningText}>
+                Detected: {scanResult.matchedAllergens.join(", ")}
+              </Text>
+            ) : (
+              <Text style={styles.safeText}>No allergens detected.</Text>
+            )}
+
+            {/* See Details 展开/收起组件 */}
+            {showDetails ? (
+              <View style={styles.detailsBox}>
+                <ScrollView style={{ maxHeight: 150 }}>
+                  <Text style={styles.ingredientsTitle}>Ingredients:</Text>
+                  <Text style={styles.ingredientsText}>
+                    {renderHighlightedIngredients(scanResult.ingredients, scanResult.matchedAllergens)}
+                  </Text>
+                </ScrollView>
+                <TouchableOpacity onPress={() => setShowDetails(false)}>
+                  <Text style={styles.toggleText}>Hide Details ▲</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setShowDetails(true)}>
+                <Text style={styles.toggleText}>See Details ▼</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* 操作按钮区 */}
+            <View style={styles.actionRow}>
+              {scanResult.type === "unsafe" && (
+                <TouchableOpacity
+                  style={styles.findAltButton}
+                  onPress={() => fetchAIRecommendation(scanResult.name, scanResult.matchedAllergens.join(","))}
+                >
+                  <Text style={styles.buttonText}>Find Alternatives</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={scanResult.type === "safe" ? styles.addButtonSafe : styles.addButtonUnsafe}
+                onPress={() =>
+                  prepareAddToInventory(
+                    scanResult.name,
+                    scanResult.barcode,
+                    scanResult.type === "safe",
+                    scanResult.ingredients
+                  )
+                }
+              >
+                <Text style={styles.buttonText}>{scanResult.type === "safe" ? "Add to Inventory" : "Still Add"}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity onPress={resetScanner} style={styles.cancelBtn}>
+              <Text style={styles.cancelBtnText}>Back to Scanner</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
       {(isContextLoading || loadingAI) && (
         <View style={styles.fullLoading} pointerEvents="none">
           <ActivityIndicator size="large" color="#fff" />
@@ -369,125 +536,3 @@ export default function CameraScreen() {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  header: {
-    position: "absolute",
-    top: 50,
-    left: 20,
-    right: 20,
-    zIndex: 10,
-    flexDirection: "row",
-    backgroundColor: "rgba(0,0,0,0.85)",
-    padding: 15,
-    borderRadius: 15,
-    alignItems: "center",
-  },
-  headerLabel: { color: "#aaa", fontSize: 10, textTransform: "uppercase" },
-  headerValue: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  headerSubtext: { color: "#888", fontSize: 12 },
-  allergenChip: {
-    backgroundColor: "#ef4444",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginRight: 6,
-  },
-  allergenChipText: { color: "#fff", fontSize: 11, fontWeight: "600" },
-  switchButton: {
-    backgroundColor: "#2f95dc",
-    paddingHorizontal: 15,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  buttonText: { color: "#fff", fontWeight: "bold" },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 100,
-  },
-  profileBox: {
-    backgroundColor: "white",
-    padding: 25,
-    borderRadius: 20,
-    width: "80%",
-  },
-  profileTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    marginBottom: 15,
-    textAlign: "center",
-  },
-  profileItem: { padding: 15, borderBottomWidth: 1, borderColor: "#eee" },
-  profileItemActive: { backgroundColor: "#f0f9ff" },
-  profileText: { fontSize: 16, textAlign: "center" },
-  profileTextActive: { color: "#2f95dc", fontWeight: "bold" },
-  cancel: { marginTop: 10, alignItems: "center" },
-  fullLoading: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
-  },
-  scannerOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    alignItems: "center",
-    zIndex: 1,
-  },
-  scannerBox: {
-    width: 250,
-    height: 250,
-    backgroundColor: "transparent",
-    position: "relative",
-  },
-  scanText: {
-    color: "white",
-    fontSize: 16,
-    marginTop: 30,
-    fontWeight: "600",
-    textShadowColor: "rgba(0, 0, 0, 0.75)",
-    textShadowOffset: { width: -1, height: 1 },
-    textShadowRadius: 10,
-  },
-  corner: {
-    position: "absolute",
-    width: 40,
-    height: 40,
-    borderColor: "#10B981",
-    borderWidth: 5,
-  },
-  cornerTL: {
-    top: 0,
-    left: 0,
-    borderBottomWidth: 0,
-    borderRightWidth: 0,
-    borderTopLeftRadius: 20,
-  },
-  cornerTR: {
-    top: 0,
-    right: 0,
-    borderBottomWidth: 0,
-    borderLeftWidth: 0,
-    borderTopRightRadius: 20,
-  },
-  cornerBL: {
-    bottom: 0,
-    left: 0,
-    borderTopWidth: 0,
-    borderRightWidth: 0,
-    borderBottomLeftRadius: 20,
-  },
-  cornerBR: {
-    bottom: 0,
-    right: 0,
-    borderTopWidth: 0,
-    borderLeftWidth: 0,
-    borderBottomRightRadius: 20,
-  },
-});

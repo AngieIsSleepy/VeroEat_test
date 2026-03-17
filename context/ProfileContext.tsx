@@ -24,7 +24,7 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 
-const BACKEND_BASE_URL = "http://35.2.54.101:8000";
+const BACKEND_BASE_URL = "http://100.64.0.113:8000";
 
 async function fetchWithTimeout(
   url: string,

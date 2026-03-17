@@ -8,6 +8,12 @@
         "egg"
       ],
       "dietary_preferences": []
+    },
+    "A a": {
+      "name": "A a",
+      "location": "",
+      "allergens": [],
+      "dietary_preferences": []
     }
   }
 }
