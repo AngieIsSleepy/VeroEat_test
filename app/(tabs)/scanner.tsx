@@ -60,7 +60,7 @@ export default function CameraScreen() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "YOUR_ANTHROPIC_API_KEY", // 🚨 请在这里输入你的 API Key
+          "x-api-key": "YOUR_ANTHROPIC_API_KEY", // 🚨 在这里输入你的 API Key
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
