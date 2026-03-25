@@ -308,7 +308,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
                 setActiveGroupState(null);
               } else if (activeGroup) {
                 const updatedActiveGroup =
-                  newGroups.find((group) => group.id === activeGroup.id) || null;
+                  newGroups.find((group) => group.id === activeGroup.id) ||
+                  null;
                 setActiveGroupState(updatedActiveGroup);
               }
 
