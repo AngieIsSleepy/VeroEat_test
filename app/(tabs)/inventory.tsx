@@ -3,7 +3,7 @@ import { ThemedView } from "@/components/themed-view";
 import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -16,8 +16,19 @@ import {
 export default function InventoryScreen() {
   const { items, removeItem, clear, runRecallCheckForCurrentProfile } =
     useInventory();
-  const { profile } = useProfile();
+  const { profile, activeMode, activeGroup } = useProfile();
   const [checkingRecall, setCheckingRecall] = useState(false);
+
+  const currentTargetLabel = useMemo(() => {
+    if (activeMode === "group" && activeGroup) {
+      return activeGroup.name;
+    }
+    return profile.name || "Guest";
+  }, [activeMode, activeGroup, profile.name]);
+
+  const currentTargetTypeLabel = useMemo(() => {
+    return activeMode === "group" && activeGroup ? "Current group" : "Current profile";
+  }, [activeMode, activeGroup]);
 
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return "No Date";
@@ -53,6 +64,13 @@ export default function InventoryScreen() {
       return;
     }
 
+    if (activeMode === "group" && activeGroup) {
+      Alert.alert(
+        "Recall Check Uses Current Profile",
+        `Group mode is active for scanning, but recall checks still run for the current profile: ${profile.name}.`,
+      );
+    }
+
     setCheckingRecall(true);
     try {
       await runRecallCheckForCurrentProfile();
@@ -73,8 +91,13 @@ export default function InventoryScreen() {
         <View>
           <ThemedText type="title">Inventory</ThemedText>
           <ThemedText style={styles.profileLabel}>
-            Current profile: {profile.name || "Guest"}
+            {currentTargetTypeLabel}: {currentTargetLabel}
           </ThemedText>
+          {activeMode === "group" && activeGroup ? (
+            <ThemedText style={styles.groupMembersLabel}>
+              Members: {activeGroup.members.join(", ")}
+            </ThemedText>
+          ) : null}
         </View>
 
         <Pressable
@@ -83,7 +106,7 @@ export default function InventoryScreen() {
             if (items.length === 0) return;
             Alert.alert(
               "Clear inventory?",
-              `This will remove all items for ${profile.name || "Guest"}.`,
+              `This will remove all items for ${currentTargetLabel}.`,
               [
                 { text: "Cancel", style: "cancel" },
                 { text: "Clear All", style: "destructive", onPress: clear },
@@ -125,7 +148,9 @@ export default function InventoryScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="basket-outline" size={64} color="#CBD5E1" />
           <ThemedText style={styles.empty}>
-            No items yet for this profile. Scan a product to start.
+            {activeMode === "group" && activeGroup
+              ? "No items yet for this group view. Scan a product to start."
+              : "No items yet for this profile. Scan a product to start."}
           </ThemedText>
         </View>
       ) : (
@@ -334,6 +359,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     color: "#CBD5E1",
     fontSize: 13,
+  },
+  groupMembersLabel: {
+    marginTop: 2,
+    color: "#94A3B8",
+    fontSize: 12,
   },
   clearBtn: { padding: 4 },
 

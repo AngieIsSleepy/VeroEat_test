@@ -11,9 +11,18 @@ interface ProfileData {
   dietary_preferences: string[];
 }
 
+interface GroupData {
+  id: string;
+  name: string;
+  members: string[];
+}
+
 interface ProfileContextType {
   profile: ProfileData;
   profiles: string[];
+  groups: GroupData[];
+  activeMode: "profile" | "group";
+  activeGroup: GroupData | null;
   isLoading: boolean;
   login: (username: string) => Promise<boolean>;
   logout: () => Promise<void>;
@@ -21,10 +30,19 @@ interface ProfileContextType {
   deleteProfile: (name: string, onSuccess?: () => void) => Promise<void>;
   updateProfileLocally: (data: Partial<ProfileData>) => void;
   syncToJac: () => Promise<void>;
+
+  createGroup: (name: string, members: string[]) => Promise<void>;
+  updateGroup: (
+    groupId: string,
+    data: Partial<Omit<GroupData, "id">>,
+  ) => Promise<void>;
+  deleteGroupById: (groupId: string) => Promise<void>;
+  setActiveGroup: (groupId: string) => Promise<void>;
+  clearActiveGroup: () => Promise<void>;
+  getActiveAllergens: () => Promise<string[]>;
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
-
 
 async function fetchWithTimeout(
   url: string,
@@ -47,6 +65,10 @@ async function fetchWithTimeout(
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<string[]>([]);
+  const [groups, setGroups] = useState<GroupData[]>([]);
+  const [activeMode, setActiveMode] = useState<"profile" | "group">("profile");
+  const [activeGroup, setActiveGroupState] = useState<GroupData | null>(null);
+
   const [profile, setProfile] = useState<ProfileData>({
     name: "",
     location: "",
@@ -59,13 +81,37 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     checkLoginStatus();
   }, []);
 
+  const persistGroups = async (nextGroups: GroupData[]) => {
+    await AsyncStorage.setItem("groups", JSON.stringify(nextGroups));
+  };
+
   const checkLoginStatus = async () => {
     try {
       const savedProfiles = await AsyncStorage.getItem("profiles");
       const savedCurrent = await AsyncStorage.getItem("currentUser");
+      const savedGroups = await AsyncStorage.getItem("groups");
+      const savedActiveMode = await AsyncStorage.getItem("activeMode");
+      const savedActiveGroupId = await AsyncStorage.getItem("activeGroupId");
+
+      let parsedGroups: GroupData[] = [];
 
       if (savedProfiles) {
         setProfiles(JSON.parse(savedProfiles));
+      }
+
+      if (savedGroups) {
+        parsedGroups = JSON.parse(savedGroups);
+        setGroups(parsedGroups);
+      }
+
+      if (savedActiveMode === "group") {
+        setActiveMode("group");
+      }
+
+      if (savedActiveGroupId && parsedGroups.length > 0) {
+        const matchedGroup =
+          parsedGroups.find((group) => group.id === savedActiveGroupId) || null;
+        setActiveGroupState(matchedGroup);
       }
 
       if (savedCurrent) {
@@ -84,11 +130,9 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     } catch (e) {
       console.error("Initialization error", e);
     } finally {
-      // 先结束 loading，不等远程
       setIsLoading(false);
     }
 
-    // 放到 finally 后面后台刷新
     try {
       const savedCurrent = await AsyncStorage.getItem("currentUser");
       if (savedCurrent) {
@@ -208,10 +252,13 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         );
       }
 
-      // 关键：本地数据一到，就结束 loading
+      await AsyncStorage.setItem("activeMode", "profile");
+      await AsyncStorage.removeItem("activeGroupId");
+      setActiveMode("profile");
+      setActiveGroupState(null);
+
       setIsLoading(false);
 
-      // 后台刷新，不阻塞页面
       fetchProfileFromJac(name).catch(() => {
         console.log("Background profile refresh failed");
       });
@@ -240,6 +287,30 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
               await AsyncStorage.removeItem(`cache_${name}`);
 
               setProfiles(newProfiles);
+
+              const newGroups = groups
+                .map((group) => ({
+                  ...group,
+                  members: group.members.filter((member) => member !== name),
+                }))
+                .filter((group) => group.members.length > 0);
+
+              setGroups(newGroups);
+              await persistGroups(newGroups);
+
+              if (
+                activeGroup &&
+                newGroups.every((group) => group.id !== activeGroup.id)
+              ) {
+                await AsyncStorage.setItem("activeMode", "profile");
+                await AsyncStorage.removeItem("activeGroupId");
+                setActiveMode("profile");
+                setActiveGroupState(null);
+              } else if (activeGroup) {
+                const updatedActiveGroup =
+                  newGroups.find((group) => group.id === activeGroup.id) || null;
+                setActiveGroupState(updatedActiveGroup);
+              }
 
               if (onSuccess) {
                 onSuccess();
@@ -299,6 +370,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     await AsyncStorage.removeItem("currentUser");
+    await AsyncStorage.setItem("activeMode", "profile");
+    await AsyncStorage.removeItem("activeGroupId");
+
+    setActiveMode("profile");
+    setActiveGroupState(null);
+
     setProfile({
       name: "",
       location: "",
@@ -322,11 +399,133 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const createGroup = async (name: string, members: string[]) => {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      Alert.alert("Error", "Group name cannot be empty");
+      return;
+    }
+
+    const cleanedMembers = Array.from(
+      new Set(members.map((member) => member.trim()).filter(Boolean)),
+    );
+
+    if (cleanedMembers.length === 0) {
+      Alert.alert("Error", "Group must have at least one member");
+      return;
+    }
+
+    const newGroup: GroupData = {
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      name: trimmedName,
+      members: cleanedMembers,
+    };
+
+    const nextGroups = [...groups, newGroup];
+    setGroups(nextGroups);
+    await persistGroups(nextGroups);
+  };
+
+  const updateGroup = async (
+    groupId: string,
+    data: Partial<Omit<GroupData, "id">>,
+  ) => {
+    const nextGroups = groups.map((group) => {
+      if (group.id !== groupId) return group;
+
+      return {
+        ...group,
+        ...data,
+        name: data.name !== undefined ? data.name.trim() : group.name,
+        members:
+          data.members !== undefined
+            ? Array.from(
+                new Set(
+                  data.members.map((member) => member.trim()).filter(Boolean),
+                ),
+              )
+            : group.members,
+      };
+    });
+
+    setGroups(nextGroups);
+    await persistGroups(nextGroups);
+
+    if (activeGroup?.id === groupId) {
+      const updated = nextGroups.find((group) => group.id === groupId) || null;
+      setActiveGroupState(updated);
+    }
+  };
+
+  const deleteGroupById = async (groupId: string) => {
+    const nextGroups = groups.filter((group) => group.id !== groupId);
+    setGroups(nextGroups);
+    await persistGroups(nextGroups);
+
+    if (activeGroup?.id === groupId) {
+      await AsyncStorage.setItem("activeMode", "profile");
+      await AsyncStorage.removeItem("activeGroupId");
+      setActiveMode("profile");
+      setActiveGroupState(null);
+    }
+  };
+
+  const setActiveGroup = async (groupId: string) => {
+    const matchedGroup = groups.find((group) => group.id === groupId) || null;
+
+    if (!matchedGroup) {
+      Alert.alert("Error", "Group not found");
+      return;
+    }
+
+    setActiveMode("group");
+    setActiveGroupState(matchedGroup);
+    await AsyncStorage.setItem("activeMode", "group");
+    await AsyncStorage.setItem("activeGroupId", groupId);
+  };
+
+  const clearActiveGroup = async () => {
+    setActiveMode("profile");
+    setActiveGroupState(null);
+    await AsyncStorage.setItem("activeMode", "profile");
+    await AsyncStorage.removeItem("activeGroupId");
+  };
+
+  const getActiveAllergens = async (): Promise<string[]> => {
+    if (activeMode === "profile" || !activeGroup) {
+      return profile.allergens || [];
+    }
+
+    const allergenSet = new Set<string>();
+
+    for (const memberName of activeGroup.members) {
+      const cached = await AsyncStorage.getItem(`cache_${memberName}`);
+      if (!cached) continue;
+
+      try {
+        const parsed: ProfileData = JSON.parse(cached);
+        for (const allergen of parsed.allergens || []) {
+          if (typeof allergen === "string" && allergen.trim()) {
+            allergenSet.add(allergen.trim().toLowerCase());
+          }
+        }
+      } catch (e) {
+        console.log("Failed to parse cached profile", memberName);
+      }
+    }
+
+    return Array.from(allergenSet);
+  };
+
   return (
     <ProfileContext.Provider
       value={{
         profile,
         profiles,
+        groups,
+        activeMode,
+        activeGroup,
         isLoading,
         login,
         logout,
@@ -334,6 +533,12 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         deleteProfile,
         updateProfileLocally,
         syncToJac,
+        createGroup,
+        updateGroup,
+        deleteGroupById,
+        setActiveGroup,
+        clearActiveGroup,
+        getActiveAllergens,
       }}
     >
       {children}

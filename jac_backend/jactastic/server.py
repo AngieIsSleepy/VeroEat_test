@@ -324,7 +324,7 @@ import re
 import json
 
 # Gemini Pro 3.1
-GLOBAL_GEMINI_API_KEY = "AIzaSy..."
+GLOBAL_GEMINI_API_KEY = "AI..."
 
 class AlternativeRequest(BaseModel):
     product_name: str

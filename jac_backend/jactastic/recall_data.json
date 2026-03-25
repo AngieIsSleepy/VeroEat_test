@@ -1,28 +1,6 @@
 {
   "inventory_by_user": {
-    "Test": [
-      {
-        "id": "item_1774401779548_69je1nh",
-        "name": "Stuf of doom",
-        "barcode": "044000085452",
-        "imageUrl": null,
-        "addedAt": 1774401779548,
-        "scannedBy": "Test",
-        "isSafe": false,
-        "expiryDate": null,
-        "ingredientsSummary": "sugar, unbleached enriched flour (wheat flour, niacin, reduced iron, thiamine mononitrate [vitamin b1], riboflavin [vitamin b2], folic acid), palm oil, cocoa (processed with alkali), soybean and/or canola oil, cornstarch, high fructose corn syrup, baking soda, salt, soy lecithin, natural and artificial flavor (contains cinnamon), yellow 5, blue 1, chocolate, red 40 lake, blue 1 lake. contains: wheat, soy.",
-        "recallStatus": "none",
-        "recallTitle": "",
-        "recallReason": "",
-        "recalledAt": null,
-        "lastRecallCheckedAt": null
-      }
-    ]
+    "Angie": []
   },
-  "recall_settings_by_user": {
-    "Test": {
-      "recallAlertsEnabled": true,
-      "expoPushToken": "ExponentPushToken[bwEBo9CzMVoYBjDeZiwqmr]"
-    }
-  }
+  "recall_settings_by_user": {}
 }

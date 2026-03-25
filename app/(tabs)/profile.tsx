@@ -2,7 +2,7 @@ import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -32,18 +32,29 @@ export default function ProfileScreen() {
   const {
     profile,
     profiles,
+    groups,
+    activeMode,
+    activeGroup,
     updateProfileLocally,
     syncToJac,
     switchProfile,
     deleteProfile,
     logout,
     isLoading,
+    createGroup,
+    deleteGroupById,
+    setActiveGroup,
+    clearActiveGroup,
   } = useProfile();
 
   const { removeItemsByProfile, recallAlertsEnabled, setRecallAlertsEnabled } =
     useInventory();
 
   const [showSwitchModal, setShowSwitchModal] = useState(false);
+  const [groupName, setGroupName] = useState("");
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>(
+    [],
+  );
 
   const toggleItem = (item: string) => {
     const current = profile.allergens || [];
@@ -52,6 +63,21 @@ export default function ProfileScreen() {
       : [...current, item];
     updateProfileLocally({ allergens: next });
   };
+
+  const toggleGroupMember = (name: string) => {
+    setSelectedGroupMembers((prev) =>
+      prev.includes(name)
+        ? prev.filter((member) => member !== name)
+        : [...prev, name],
+    );
+  };
+
+  const activeTargetText = useMemo(() => {
+    if (activeMode === "group" && activeGroup) {
+      return `${activeGroup.name} (${activeGroup.members.length} members)`;
+    }
+    return profile.name || "Guest";
+  }, [activeMode, activeGroup, profile.name]);
 
   if (isLoading && !profile.name) {
     return (
@@ -83,6 +109,39 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Current Scan Target</Text>
+
+          <View style={styles.targetCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.targetLabel}>
+                {activeMode === "group" ? "Active Group" : "Active Profile"}
+              </Text>
+              <Text style={styles.targetName}>{activeTargetText}</Text>
+              {activeMode === "group" && activeGroup ? (
+                <Text style={styles.targetSubtext}>
+                  Members: {activeGroup.members.join(", ")}
+                </Text>
+              ) : (
+                <Text style={styles.targetSubtext}>
+                  Scanner is currently checking this profile
+                </Text>
+              )}
+            </View>
+
+            {activeMode === "group" && (
+              <TouchableOpacity
+                style={styles.secondarySmallButton}
+                onPress={clearActiveGroup}
+              >
+                <Text style={styles.secondarySmallButtonText}>
+                  Use Profile
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Allergies</Text>
           <View style={styles.chipContainer}>
             {AVAILABLE_ALLERGENS.map((a) => (
@@ -107,7 +166,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* 新增：召回提醒设置 */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Recall Alerts</Text>
 
@@ -149,6 +207,124 @@ export default function ProfileScreen() {
                 : "Recall alerts are OFF for this profile"}
             </Text>
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Create Group</Text>
+
+          <TextInput
+            style={styles.groupNameInput}
+            value={groupName}
+            onChangeText={setGroupName}
+            placeholder="Group Name"
+          />
+
+          <Text style={styles.groupHelperText}>Select Members</Text>
+
+          <View style={styles.memberList}>
+            {profiles.map((name) => {
+              const selected = selectedGroupMembers.includes(name);
+              return (
+                <TouchableOpacity
+                  key={name}
+                  style={[
+                    styles.memberChip,
+                    selected && styles.memberChipSelected,
+                  ]}
+                  onPress={() => toggleGroupMember(name)}
+                >
+                  <Text
+                    style={[
+                      styles.memberChipText,
+                      selected && styles.memberChipTextSelected,
+                    ]}
+                  >
+                    {name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <TouchableOpacity
+            style={styles.createGroupButton}
+            onPress={async () => {
+              await createGroup(groupName, selectedGroupMembers);
+              setGroupName("");
+              setSelectedGroupMembers([]);
+            }}
+          >
+            <Text style={styles.createGroupButtonText}>Create Group</Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Groups</Text>
+
+          {groups.length === 0 ? (
+            <Text style={styles.emptyText}>No groups yet</Text>
+          ) : (
+            groups.map((group) => {
+              const isActive =
+                activeMode === "group" && activeGroup?.id === group.id;
+
+              return (
+                <View
+                  key={group.id}
+                  style={[styles.groupCard, isActive && styles.groupCardActive]}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text
+                      style={[
+                        styles.groupCardTitle,
+                        isActive && styles.groupCardTitleActive,
+                      ]}
+                    >
+                      {group.name} {isActive ? "✓" : ""}
+                    </Text>
+                    <Text style={styles.groupCardSubtitle}>
+                      Members: {group.members.join(", ")}
+                    </Text>
+                  </View>
+
+                  <View style={styles.groupActions}>
+                    {!isActive ? (
+                      <TouchableOpacity
+                        style={styles.groupActionButton}
+                        onPress={async () => {
+                          await setActiveGroup(group.id);
+                        }}
+                      >
+                        <Text style={styles.groupActionButtonText}>Use</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.groupUnuseButton}
+                        onPress={async () => {
+                          await clearActiveGroup();
+                        }}
+                      >
+                        <Text style={styles.groupUnuseButtonText}>Unuse</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      style={styles.groupDeleteButton}
+                      onPress={async () => {
+                        await deleteGroupById(group.id);
+                      }}
+                    >
+                      <Ionicons
+                        name="trash-outline"
+                        size={18}
+                        color="#EF4444"
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              );
+            })
+          )}
         </View>
 
         <View style={styles.actionContainer}>
@@ -301,6 +477,45 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
 
+  targetCard: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: "#F8FAFC",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  targetLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 4,
+    fontWeight: "600",
+  },
+  targetName: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  targetSubtext: {
+    marginTop: 4,
+    fontSize: 13,
+    color: "#6B7280",
+    lineHeight: 18,
+  },
+  secondarySmallButton: {
+    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  secondarySmallButtonText: {
+    color: "#374151",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   chip: {
     backgroundColor: "#F3F4F6",
@@ -314,7 +529,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 14, color: "#4B5563" },
   chipTextSelected: { color: "#FFFFFF" },
 
-  // 新增：召回提醒样式
   settingRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -345,6 +559,113 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontSize: 13,
     fontWeight: "600",
+  },
+
+  groupNameInput: {
+    backgroundColor: "#F3F4F6",
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: "#111827",
+    marginBottom: 14,
+  },
+  groupHelperText: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 10,
+    fontWeight: "600",
+  },
+  memberList: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 10,
+    marginBottom: 14,
+  },
+  memberChip: {
+    backgroundColor: "#F3F4F6",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+  },
+  memberChipSelected: {
+    backgroundColor: "#DBEAFE",
+    borderColor: "#60A5FA",
+  },
+  memberChipText: {
+    fontSize: 14,
+    color: "#374151",
+  },
+  memberChipTextSelected: {
+    color: "#1D4ED8",
+    fontWeight: "700",
+  },
+  createGroupButton: {
+    backgroundColor: "#2563EB",
+    padding: 14,
+    borderRadius: 12,
+    alignItems: "center",
+  },
+  createGroupButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+
+  emptyText: {
+    color: "#6B7280",
+    fontSize: 14,
+  },
+  groupCard: {
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 14,
+    padding: 14,
+    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  groupCardActive: {
+    backgroundColor: "#EFF6FF",
+    borderColor: "#93C5FD",
+  },
+  groupCardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 4,
+  },
+  groupCardTitleActive: {
+    color: "#1D4ED8",
+  },
+  groupCardSubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+    lineHeight: 18,
+  },
+  groupActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 12,
+  },
+  groupActionButton: {
+    backgroundColor: "#2563EB",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  groupActionButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  groupDeleteButton: {
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#FEF2F2",
   },
 
   actionContainer: { padding: 20 },
@@ -418,4 +739,17 @@ const styles = StyleSheet.create({
   },
   addProfileButtonText: { color: "#16A34A", fontWeight: "bold", fontSize: 16 },
   modalClose: { marginTop: 20, alignItems: "center" },
+  groupUnuseButton: {
+    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+
+  groupUnuseButtonText: {
+    color: "#374151",
+    fontSize: 13,
+    fontWeight: "700",
+  },
 });

@@ -14,6 +14,25 @@
       "location": "",
       "allergens": [],
       "dietary_preferences": []
+    },
+    "": {
+      "name": "",
+      "location": "",
+      "allergens": [
+        "milk",
+        "egg"
+      ],
+      "dietary_preferences": []
+    },
+    "Yang": {
+      "name": "Yang",
+      "location": "",
+      "allergens": [
+        "milk",
+        "egg",
+        "gluten"
+      ],
+      "dietary_preferences": []
     }
   }
 }
