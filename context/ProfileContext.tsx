@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/app/config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import React, { createContext, useContext, useEffect, useState } from "react";
@@ -24,7 +25,6 @@ interface ProfileContextType {
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
 
-const BACKEND_BASE_URL = "http://100.64.0.113:8000";
 
 async function fetchWithTimeout(
   url: string,
@@ -102,7 +102,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const fetchProfileFromJac = async (username: string) => {
     try {
       const res = await fetchWithTimeout(
-        `${BACKEND_BASE_URL}/walker/get_user`,
+        `${API_BASE_URL}/walker/get_user`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -268,7 +268,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const syncToJac = async () => {
     try {
       const res = await fetchWithTimeout(
-        `${BACKEND_BASE_URL}/walker/create_or_update_user`,
+        `${API_BASE_URL}/walker/create_or_update_user`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

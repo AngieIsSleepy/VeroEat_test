@@ -165,4 +165,68 @@ export const styles = StyleSheet.create({
   
   cancelBtn: { marginTop: 15, padding: 10 },
   cancelBtnText: { color: "#6B7280", fontSize: 16, fontWeight: "600" },
+
+
+  // ================= AI 替代品推荐相关样式 =================
+  alternativesContainer: {
+    marginTop: 15,
+    width: "100%",
+    // 给整个推荐区域一个固定的最大高度，防止把卡片撑爆
+    maxHeight: 280, 
+  },
+  alternativesTitle: {
+    fontSize: 16,
+    fontWeight: "bold",
+    marginBottom: 10,
+    color: "#374151",
+  },
+  alternativesScroll: {
+    // 关键：不要让 ScrollView 无限长，它会在这个高度内滚动
+    flexGrow: 0, 
+  },
+  alternativeCard: {
+    backgroundColor: "#F0FDF4",
+    padding: 15,
+    borderRadius: 12,
+    marginBottom: 10,
+    borderLeftWidth: 5,
+    borderLeftColor: "#10B981", 
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  altName: {
+    fontWeight: "bold",
+    fontSize: 16,
+    color: "#065F46",
+  },
+  altBrand: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginTop: 4,
+  },
+  altReason: {
+    fontSize: 13,
+    color: "#4B5563",
+    marginTop: 8,
+    fontStyle: "italic",
+    lineHeight: 18,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  }
+
+
+
+
+
+
+
+
+
+
+
+
 });

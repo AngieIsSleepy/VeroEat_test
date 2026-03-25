@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/app/config";
 import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -13,8 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-import { styles } from './scanner.styles';
+import { styles } from './_scanner.styles';
 
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   peanuts: ["peanut", "peanuts", "groundnut"],
@@ -39,6 +39,10 @@ interface ScanResult {
   matchedAllergens: string[];
   currentMode: string;
 }
+
+
+
+
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
@@ -46,6 +50,9 @@ export default function CameraScreen() {
   const [showProfiles, setShowProfiles] = useState(false);
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
+  const [alternatives, setAlternatives] = useState<any[] | null>(null);
+  const [explainedIngredients, setExplainedIngredients] = useState<any[] | null>(null);
+  const [loadingExplanation, setLoadingExplanation] = useState(false);
   const {
     profile: userProfile,
     profiles,
@@ -65,38 +72,41 @@ export default function CameraScreen() {
     setScanned(false);
     setScanResult(null); 
     setShowDetails(false);
+    setAlternatives(null);
+    setExplainedIngredients(null); 
   };
 
-  // --- 新增：调用 AI 总结成分 ---
-  const fetchIngredientsSummary = async (ingredientsText: string) => {
+  const fetchIngredientsExplanation = async (ingredients: string, allergens: string[]) => {
+    // 如果已经获取过，就不重复请求了
+    if (explainedIngredients) {
+      setShowDetails(true);
+      return;
+    }
+    
+    setLoadingExplanation(true);
+    setShowDetails(true); // 先展开面板显示 loading
+    
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch(`${API_BASE_URL}/ai/explain-ingredients`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": "enter your API key", // 🚨 在这里输入你的 API Key
-          "anthropic-version": "2023-06-01",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 300,
-          messages: [
-            {
-              role: "user",
-              content: `Summarize these food ingredients into a concise, readable English list. Highlight potential allergens. Original ingredients: ${ingredientsText}`,
-            },
-          ],
+          ingredients: ingredients,
+          allergens: allergens.join(","),
         }),
       });
       const result = await response.json();
-      return result.content?.[0]?.text || "No ingredient summary available";
+      if (result.status === "success" && result.data) {
+        setExplainedIngredients(result.data);
+      }
     } catch (err) {
-      console.error("AI Summary Error:", err);
-      return "No ingredient summary available";
+      console.error(err);
+      Alert.alert("Error", "Failed to explain ingredients.");
+    } finally {
+      setLoadingExplanation(false);
     }
   };
 
-  // --- 修改：添加至清单并处理保质期输入 ---
   const prepareAddToInventory = async (
     name: string,
     barcode: string,
@@ -104,13 +114,8 @@ export default function CameraScreen() {
     rawIngredients: string,
   ) => {
     setScanResult(null);
-    setLoadingAI(true);
 
-    // 1. 获取 AI 总结
-    const summary = await fetchIngredientsSummary(rawIngredients);
-    setLoadingAI(false);
-
-    // 2. 弹出保质期输入框 (输入天数)
+    // 弹出保质期输入框 (输入天数)
     Alert.prompt(
       "Set Expiry Date?",
       "Enter the exact expiration / best by date (e.g., MM/DD/YYYY or YYYY-MM-DD):",
@@ -124,8 +129,9 @@ export default function CameraScreen() {
               barcode,
               scannedBy: userProfile.name || "Guest",
               isSafe,
-              expiryDate: undefined, // 没有过期时间
-              ingredientsSummary: summary,
+              expiryDate: undefined,
+              // 因为没有 AI summary 了，我们可以直接存原始成分，或者不存
+              ingredientsSummary: rawIngredients, 
             });
 
             if (added) {
@@ -157,7 +163,7 @@ export default function CameraScreen() {
               scannedBy: userProfile.name || "Guest",
               isSafe,
               expiryDate: expiryTimestamp, 
-              ingredientsSummary: summary,
+              ingredientsSummary: rawIngredients, 
             });
 
             if (added) {
@@ -178,42 +184,33 @@ export default function CameraScreen() {
     );
   };
 
-  const fetchAIRecommendation = async (
-    unsafeProduct: string,
-    reason: string,
-  ) => {
-    setScanResult(null);
+  const fetchAIRecommendation = async (unsafeProduct: string, allergens: string) => {
     setLoadingAI(true);
+    setAlternatives(null); // 清空上次的记录
+    
     try {
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      // 请求你刚才在 server.py 写的接口 (注意你的 IP 是否正确)
+      const response = await fetch(`${API_BASE_URL}/ai/alternatives`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "enter your API key",
-          "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-3-haiku-20240307",
-          max_tokens: 200,
-          messages: [
-            {
-              role: "user",
-              content: `Product: ${unsafeProduct}. Issue: ${reason}. Suggest 1 safe alternative. Return ONLY JSON: {"recommendation": "name", "brand": "brand"}`,
-            },
-          ],
+          product_name: unsafeProduct,
+          allergens: allergens,
         }),
       });
+      
       const result = await response.json();
-      const rawText = result.content?.[0]?.text || "{}";
-      const data = JSON.parse(rawText);
-      Alert.alert(
-        "AI Recommendation",
-        `You can try: ${data.recommendation}\nBrand: ${data.brand}`,
-        [{ text: "OK", onPress: resetScanner }],
-      );
-    } catch {
-      Alert.alert("AI Error", "Failed to fetch recommendation");
-      resetScanner();
+      
+      if (result.status === "success" && result.data) {
+        setAlternatives(result.data); // 将拿到的数组存入 state
+      } else {
+        Alert.alert("Error", "Failed to find alternatives.");
+      }
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Network Error", "Could not reach the server.");
     } finally {
       setLoadingAI(false);
     }
@@ -268,71 +265,7 @@ export default function CameraScreen() {
         resetScanner();
       });
   };
-  //       if (matched.length > 0) {
-  //         Alert.alert(
-  //           "⚠️ Warning (Mode: " + currentMode + ")",
-  //           `${name}\n\nDetected ingredients: ${matched.join(", ")}`,
-  //           [
-  //             { text: "Back", style: "cancel", onPress: resetScanner },
-  //             {
-  //               text: "Still Add",
-  //               onPress: () =>
-  //                 prepareAddToInventory(name, data, false, ingredients),
-  //             },
-  //             {
-  //               text: "Find Alternatives",
-  //               onPress: () => fetchAIRecommendation(name, matched.join(",")),
-  //             },
-  //           ],
-  //         );
-  //       } else {
-  //         Alert.alert(
-  //           "Safe ✅",
-  //           `Product: ${name}\nCurrent Mode: ${currentMode}\n\nNo allergens detected.`,
-  //           [
-  //             { text: "Back", style: "cancel", onPress: resetScanner },
-  //             {
-  //               text: "Add to Inventory",
-  //               onPress: () =>
-  //                 prepareAddToInventory(name, data, true, ingredients),
-  //             },
-  //           ],
-  //         );
-  //       }
-  //     })
-  //     .catch(() => {
-  //       Alert.alert("Error", "Network request failed");
-  //       resetScanner();
-  //     });
-  // };
-
-  const renderHighlightedIngredients = (text: string, matchedAllergens: string[]) => {
-    if (!text) return <Text style={{ color: "gray" }}>No ingredients listed.</Text>;
-    let dangerWords: string[] = [];
-    matchedAllergens.forEach((allergen) => {
-      if (BABY_RULES.includes(allergen)) {
-        dangerWords.push(allergen);
-      } else {
-        dangerWords.push(...(ALLERGEN_KEYWORDS[allergen] || [allergen]));
-      }
-    });
-    const parts = text.split(/([,\s().]+)/);
-
-    return parts.map((part, index) => {
-      const isDanger = dangerWords.some((w) => part.toLowerCase().includes(w));
-      return (
-        <Text
-          key={index}
-          style={{
-            color: isDanger ? "red" : "#333",
-            fontWeight: isDanger ? "bold" : "normal",
-          }}
-        >
-          {part}
-        </Text>
-      );
-    });
-  };
+  
 
   if (!permission?.granted)
     return (
@@ -479,19 +412,43 @@ export default function CameraScreen() {
 
             {/* See Details 展开/收起组件 */}
             {showDetails ? (
-              <View style={styles.detailsBox}>
-                <ScrollView style={{ maxHeight: 150 }}>
-                  <Text style={styles.ingredientsTitle}>Ingredients:</Text>
-                  <Text style={styles.ingredientsText}>
-                    {renderHighlightedIngredients(scanResult.ingredients, scanResult.matchedAllergens)}
-                  </Text>
-                </ScrollView>
+              <View style={[styles.detailsBox, { maxHeight: 250 }]}>
+                <Text style={styles.ingredientsTitle}>🔬 Ingredients Explained:</Text>
+                
+                {loadingExplanation ? (
+                  <ActivityIndicator size="small" color="#3B82F6" style={{ marginVertical: 20 }} />
+                ) : explainedIngredients ? (
+                  <ScrollView nestedScrollEnabled={true}>
+                    {explainedIngredients.map((item, idx) => (
+                      <View key={idx} style={{ 
+                        marginBottom: 10, 
+                        borderBottomWidth: 1, 
+                        borderBottomColor: '#E5E7EB', 
+                        paddingBottom: 8 
+                      }}>
+                        <Text style={{ 
+                          fontWeight: 'bold', 
+                          color: item.is_allergen ? '#DC2626' : '#1F2937',
+                          fontSize: 15 
+                        }}>
+                          {item.is_allergen ? '⚠️ ' : '✅ '}{item.name}
+                        </Text>
+                        <Text style={{ color: '#4B5563', fontSize: 13, marginTop: 2 }}>
+                          {item.explanation}
+                        </Text>
+                      </View>
+                    ))}
+                  </ScrollView>
+                ) : (
+                  <Text style={{ color: "gray" }}>Could not load explanation.</Text>
+                )}
+                
                 <TouchableOpacity onPress={() => setShowDetails(false)}>
                   <Text style={styles.toggleText}>Hide Details ▲</Text>
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity onPress={() => setShowDetails(true)}>
+              <TouchableOpacity onPress={() => fetchIngredientsExplanation(scanResult.ingredients, scanResult.matchedAllergens)}>
                 <Text style={styles.toggleText}>See Details ▼</Text>
               </TouchableOpacity>
             )}
@@ -500,12 +457,18 @@ export default function CameraScreen() {
             <View style={styles.actionRow}>
               {scanResult.type === "unsafe" && (
                 <TouchableOpacity
-                  style={styles.findAltButton}
+                  style={[styles.findAltButton, loadingAI && styles.buttonDisabled]}
                   onPress={() => fetchAIRecommendation(scanResult.name, scanResult.matchedAllergens.join(","))}
+                  disabled={loadingAI}
                 >
-                  <Text style={styles.buttonText}>Find Alternatives</Text>
+                  {loadingAI ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.buttonText}>✨ Alternatives</Text>
+                  )}
                 </TouchableOpacity>
               )}
+              
               <TouchableOpacity
                 style={scanResult.type === "safe" ? styles.addButtonSafe : styles.addButtonUnsafe}
                 onPress={() =>
@@ -521,6 +484,32 @@ export default function CameraScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* 👇 新增：AI 替代品展示区域 (应用了新的 Style) 👇 */}
+            {alternatives && alternatives.length > 0 && (
+              <View style={styles.alternativesContainer}>
+                <Text style={styles.alternativesTitle}>
+                  💡 Safe Alternatives:
+                </Text>
+                {/* 🚨 关键修改：加上 nestedScrollEnabled={true} */}
+                <ScrollView 
+                  style={styles.alternativesScroll} 
+                  showsVerticalScrollIndicator={true}
+                  nestedScrollEnabled={true} // 允许在弹窗内部进行嵌套滚动
+                >
+                  {alternatives.map((alt, index) => (
+                    <View key={index} style={styles.alternativeCard}>
+                      <Text style={styles.altName}>{alt.name}</Text>
+                      {alt.brand && alt.brand !== "Generic" && (
+                         <Text style={styles.altBrand}>Brand: {alt.brand}</Text>
+                      )}
+                      <Text style={styles.altReason}>{alt.reason}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            {/* 👆 结束新增 👆 */}
+
             <TouchableOpacity onPress={resetScanner} style={styles.cancelBtn}>
               <Text style={styles.cancelBtnText}>Back to Scanner</Text>
             </TouchableOpacity>
@@ -528,7 +517,9 @@ export default function CameraScreen() {
         </View>
       )}
 
-      {(isContextLoading || loadingAI) && (
+      {/* ⚠️ 注意：如果你发现上面代码已经有 loadingAI 的全屏遮罩，可以删掉它，因为我们已经在按钮里做了 loading 动画。
+          也就是把原本最下面的 isContextLoading || loadingAI 里的 loadingAI 删掉，只保留 isContextLoading：*/}
+      {isContextLoading && (
         <View style={styles.fullLoading} pointerEvents="none">
           <ActivityIndicator size="large" color="#fff" />
         </View>

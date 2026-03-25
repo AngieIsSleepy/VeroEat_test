@@ -8,6 +8,10 @@ from pathlib import Path
 from typing import Any, Optional
 from datetime import datetime
 import time
+import httpx
+
+
+
 
 app = FastAPI()
 
@@ -313,6 +317,116 @@ def check_recall_for_all_users():
         "userCount": len(summary),
         "summary": summary,
     }
+
+# ==================== AI 接口部分 ====================
+import httpx
+import re
+import json
+
+# Gemini Pro 3.1
+GLOBAL_GEMINI_API_KEY = "AIzaSy..."
+
+class AlternativeRequest(BaseModel):
+    product_name: str
+    allergens: str
+
+@app.post("/ai/alternatives")
+async def get_alternatives(req: AlternativeRequest):
+    prompt = f"""
+    You are a professional nutritionist. The user is allergic to or avoiding: [{req.allergens}].
+    They just scanned a product that is unsafe for them: "{req.product_name}".
+    Please suggest 3 safe alternative products or generic safe replacements. 
+    Return ONLY a valid JSON object in this exact format, nothing else:
+    {{
+      "alternatives": [
+        {{ "name": "Alternative Name", "brand": "Brand Name or Generic", "reason": "Why it's safe" }}
+      ]
+    }}
+    """
+
+    # 这里自动使用上面填的全局 Key
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GLOBAL_GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.2}}
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(url, headers={"Content-Type": "application/json"}, json=payload)
+            response.raise_for_status()
+            raw_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if match:
+                return {"status": "success", "data": json.loads(match.group(0)).get("alternatives", [])}
+            else:
+                raise ValueError("No JSON found")
+    except httpx.HTTPStatusError as e:
+        print("========== Gemini Alternatives Error (HTTP) ==========")
+        print(e.response.text)
+        return {"status": "error", "message": "Gemini API Error"}
+    except Exception as e:
+        print("========== Gemini Alternatives Error (Other) ==========")
+        print(str(e))
+        return {"status": "error", "message": "Failed to fetch AI recommendations."}
+
+class ExplainRequest(BaseModel):
+    ingredients: str
+    allergens: str
+
+@app.post("/ai/explain-ingredients")
+async def explain_ingredients(req: ExplainRequest):
+    # 保护机制：如果没有成分表，直接返回提示
+    if not req.ingredients or req.ingredients.strip() == "":
+        return {
+            "status": "success", 
+            "data": [{
+                "name": "No Data", 
+                "explanation": "No ingredients information is available for this product.", 
+                "is_allergen": False
+            }]
+        }
+
+    prompt = f"""
+    Analyze these food ingredients: {req.ingredients}. 
+    The user is allergic to or avoiding: {req.allergens}.
+    Explain what each main ingredient is in very simple, short English.
+    Identify if it contains the user's allergens.
+    Return ONLY a valid JSON object in this exact format, nothing else:
+    {{
+      "explanations": [
+        {{"name": "Ingredient Name", "explanation": "Simple explanation...", "is_allergen": true}}
+      ]
+    }}
+    """
+
+    # 这里自动使用上面填的全局 Key
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key={GLOBAL_GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"temperature": 0.1}}
+
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            response = await client.post(url, headers={"Content-Type": "application/json"}, json=payload)
+            response.raise_for_status()
+            raw_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if match:
+                return {"status": "success", "data": json.loads(match.group(0)).get("explanations", [])}
+            else:
+                raise ValueError("No JSON found")
+    except httpx.HTTPStatusError as e:
+        print("========== Gemini Explain Error (HTTP) ==========")
+        print(e.response.text)
+        return {"status": "error", "message": "Gemini API Error"}
+    except Exception as e:
+        print("========== Gemini Explain Error (Other) ==========")
+        print(str(e))
+        return {"status": "error", "message": "Failed to explain ingredients."}
+
+# ==================== 启动代码 ====================
+if __name__ == "__main__":
+    import uvicorn
+    print("VeroEat Backend is starting on http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000)
 
 if __name__ == "__main__":
     print("VeroEat Backend is starting on http://0.0.0.0:8000")

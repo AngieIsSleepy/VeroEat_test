@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/app/config";
 import { registerForPushNotificationsAsync } from "@/utils/notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, {
@@ -9,7 +10,6 @@ import React, {
   useState,
 } from "react";
 import { useProfile } from "./ProfileContext";
-
 export type RecallStatus = "none" | "recalled";
 
 export interface InventoryItem {
@@ -74,7 +74,6 @@ type InventoryContextValue = {
 const INVENTORY_STORAGE_KEY = "inventory_by_profile_v1";
 const RECALL_SETTINGS_STORAGE_KEY = "recall_alert_settings_v1";
 const PUSH_TOKEN_STORAGE_KEY = "push_tokens_by_profile_v1";
-const BACKEND_BASE_URL = "http://35.2.54.101:8000";
 
 const InventoryContext = createContext<InventoryContextValue | null>(null);
 
@@ -289,10 +288,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     try {
       const [inventoryRes, settingsRes] = await Promise.all([
         fetch(
-          `${BACKEND_BASE_URL}/inventory/${encodeURIComponent(currentProfileName)}`,
+          `${API_BASE_URL}/inventory/${encodeURIComponent(currentProfileName)}`,
         ),
         fetch(
-          `${BACKEND_BASE_URL}/recall-settings/${encodeURIComponent(currentProfileName)}`,
+          `${API_BASE_URL}/recall-settings/${encodeURIComponent(currentProfileName)}`,
         ),
       ]);
 
@@ -346,7 +345,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await fetch(
-        `${BACKEND_BASE_URL}/recall/check/${encodeURIComponent(
+        `${API_BASE_URL}/recall/check/${encodeURIComponent(
           currentProfileName,
         )}`,
         {
@@ -396,7 +395,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const syncInventoryToBackend = async () => {
       try {
-        await fetch(`${BACKEND_BASE_URL}/inventory/sync`, {
+        await fetch(`${API_BASE_URL}/inventory/sync`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -424,7 +423,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
     const syncRecallSettingsToBackend = async () => {
       try {
-        await fetch(`${BACKEND_BASE_URL}/recall-settings/sync`, {
+        await fetch(`${API_BASE_URL}/recall-settings/sync`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
