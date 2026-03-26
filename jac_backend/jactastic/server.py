@@ -25,6 +25,7 @@ app.add_middleware(
 BASE_DIR = Path(__file__).resolve().parent
 DATA_FILE = BASE_DIR / "recall_data.json"
 PROFILE_CACHE_FILE = BASE_DIR / "profile_cache.json"
+GROUPS_FILE = BASE_DIR / "groups_data.json"
 
 
 def load_json_file(path: Path, default: dict[str, Any]) -> dict[str, Any]:
@@ -69,6 +70,19 @@ def save_profile_cache(data: dict[str, Any]) -> None:
     save_json_file(PROFILE_CACHE_FILE, data)
 
 
+def load_groups_data() -> dict[str, Any]:
+    return load_json_file(
+        GROUPS_FILE,
+        {
+            "groups": [],
+        },
+    )
+
+
+def save_groups_data(data: dict[str, Any]) -> None:
+    save_json_file(GROUPS_FILE, data)
+
+
 class User(BaseModel):
     name: str
     location: str = ""
@@ -103,6 +117,16 @@ class RecallSettingsRequest(BaseModel):
     username: str
     recallAlertsEnabled: bool = True
     expoPushToken: Optional[str] = None
+
+
+class GroupItem(BaseModel):
+    id: str
+    name: str
+    members: list[str] = Field(default_factory=list)
+
+
+class GroupsSyncRequest(BaseModel):
+    groups: list[GroupItem] = Field(default_factory=list)
 
 
 @app.post("/walker/create_or_update_user")
@@ -168,6 +192,54 @@ def get_user(user: User):
         }
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+@app.get("/groups")
+def get_groups():
+    data = load_groups_data()
+    return {
+        "status": "success",
+        "groups": data.get("groups", []),
+    }
+
+
+@app.post("/groups/sync")
+def sync_groups(payload: GroupsSyncRequest):
+    cleaned_groups = []
+    seen_ids = set()
+
+    for group in payload.groups:
+        if not group.id or group.id in seen_ids:
+            continue
+
+        cleaned_name = group.name.strip()
+        cleaned_members = []
+        seen_members = set()
+
+        for member in group.members:
+            member_name = member.strip()
+            if not member_name or member_name in seen_members:
+                continue
+            cleaned_members.append(member_name)
+            seen_members.add(member_name)
+
+        if not cleaned_name or not cleaned_members:
+            continue
+
+        cleaned_groups.append({
+            "id": group.id,
+            "name": cleaned_name,
+            "members": cleaned_members,
+        })
+        seen_ids.add(group.id)
+
+    save_groups_data({"groups": cleaned_groups})
+
+    return {
+        "status": "success",
+        "count": len(cleaned_groups),
+        "groups": cleaned_groups,
+    }
 
 
 @app.post("/inventory/sync")
@@ -588,10 +660,8 @@ async def check_recall_for_all_users():
         "summary": summary,
     }
 
-
-# ==================== AI 接口部分 ====================
-
-GLOBAL_GEMINI_API_KEY = "AI..."
+# ------------------AI---------------------------------------
+GLOBAL_GEMINI_API_KEY = "AI"
 
 class AlternativeRequest(BaseModel):
     product_name: str

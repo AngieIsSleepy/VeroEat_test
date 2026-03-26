@@ -2,10 +2,9 @@ import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import {
   ActivityIndicator,
-  Modal,
   ScrollView,
   StyleSheet,
   Switch,
@@ -32,29 +31,19 @@ export default function ProfileScreen() {
   const {
     profile,
     profiles,
-    groups,
-    activeMode,
-    activeGroup,
+    activeTargetType,
+    activeTargetLabel,
+    activeTargetId,
     updateProfileLocally,
-    syncToJac,
     switchProfile,
+    setActiveTarget,
     deleteProfile,
     logout,
     isLoading,
-    createGroup,
-    deleteGroupById,
-    setActiveGroup,
-    clearActiveGroup,
   } = useProfile();
 
   const { removeItemsByProfile, recallAlertsEnabled, setRecallAlertsEnabled } =
     useInventory();
-
-  const [showSwitchModal, setShowSwitchModal] = useState(false);
-  const [groupName, setGroupName] = useState("");
-  const [selectedGroupMembers, setSelectedGroupMembers] = useState<string[]>(
-    [],
-  );
 
   const toggleItem = (item: string) => {
     const current = profile.allergens || [];
@@ -64,20 +53,12 @@ export default function ProfileScreen() {
     updateProfileLocally({ allergens: next });
   };
 
-  const toggleGroupMember = (name: string) => {
-    setSelectedGroupMembers((prev) =>
-      prev.includes(name)
-        ? prev.filter((member) => member !== name)
-        : [...prev, name],
-    );
-  };
-
   const activeTargetText = useMemo(() => {
-    if (activeMode === "group" && activeGroup) {
-      return `${activeGroup.name} (${activeGroup.members.length} members)`;
-    }
-    return profile.name || "Guest";
-  }, [activeMode, activeGroup, profile.name]);
+    return `${activeTargetLabel} (${activeTargetType === "group" ? "Group" : "Profile"})`;
+  }, [activeTargetLabel, activeTargetType]);
+
+  const isViewingCurrentProfile =
+    activeTargetType === "profile" && activeTargetId === profile.name;
 
   if (isLoading && !profile.name) {
     return (
@@ -105,44 +86,33 @@ export default function ProfileScreen() {
             value={profile.location}
             onChangeText={(text) => updateProfileLocally({ location: text })}
             placeholder="Your Location"
+            placeholderTextColor="#9CA3AF"
           />
+          <Text style={styles.autoSaveText}>Changes save automatically</Text>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Current Scan Target</Text>
+          <Text style={styles.sectionTitle}>Current Active Target</Text>
 
           <View style={styles.targetCard}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.targetLabel}>
-                {activeMode === "group" ? "Active Group" : "Active Profile"}
-              </Text>
+              <Text style={styles.targetLabel}>Now viewing</Text>
               <Text style={styles.targetName}>{activeTargetText}</Text>
-              {activeMode === "group" && activeGroup ? (
-                <Text style={styles.targetSubtext}>
-                  Members: {activeGroup.members.join(", ")}
-                </Text>
-              ) : (
-                <Text style={styles.targetSubtext}>
-                  Scanner is currently checking this profile
-                </Text>
-              )}
+              <Text style={styles.targetSubtext}>
+                Inventory and scanner currently follow this target.
+              </Text>
             </View>
-
-            {activeMode === "group" && (
-              <TouchableOpacity
-                style={styles.secondarySmallButton}
-                onPress={clearActiveGroup}
-              >
-                <Text style={styles.secondarySmallButtonText}>
-                  Use Profile
-                </Text>
-              </TouchableOpacity>
-            )}
           </View>
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Allergies</Text>
+          <Text style={styles.sectionTitle}>Profile Details</Text>
+
+          <Text style={styles.helperText}>
+            This tab edits the currently selected profile only.
+          </Text>
+
+          <Text style={styles.fieldLabel}>Allergies</Text>
           <View style={styles.chipContainer}>
             {AVAILABLE_ALLERGENS.map((a) => (
               <TouchableOpacity
@@ -210,116 +180,89 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Create Group</Text>
+          <Text style={styles.sectionTitle}>Profiles</Text>
 
-          <TextInput
-            style={styles.groupNameInput}
-            value={groupName}
-            onChangeText={setGroupName}
-            placeholder="Group Name"
-          />
+          <Text style={styles.helperText}>
+            Self profile is the main profile. Other profiles can be added,
+            switched, and deleted here.
+          </Text>
 
-          <Text style={styles.groupHelperText}>Select Members</Text>
-
-          <View style={styles.memberList}>
-            {profiles.map((name) => {
-              const selected = selectedGroupMembers.includes(name);
-              return (
-                <TouchableOpacity
-                  key={name}
-                  style={[
-                    styles.memberChip,
-                    selected && styles.memberChipSelected,
-                  ]}
-                  onPress={() => toggleGroupMember(name)}
-                >
-                  <Text
-                    style={[
-                      styles.memberChipText,
-                      selected && styles.memberChipTextSelected,
-                    ]}
-                  >
-                    {name}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <TouchableOpacity
-            style={styles.createGroupButton}
-            onPress={async () => {
-              await createGroup(groupName, selectedGroupMembers);
-              setGroupName("");
-              setSelectedGroupMembers([]);
-            }}
-          >
-            <Text style={styles.createGroupButtonText}>Create Group</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Groups</Text>
-
-          {groups.length === 0 ? (
-            <Text style={styles.emptyText}>No groups yet</Text>
+          {profiles.length === 0 ? (
+            <Text style={styles.emptyText}>No profiles yet</Text>
           ) : (
-            groups.map((group) => {
-              const isActive =
-                activeMode === "group" && activeGroup?.id === group.id;
+            profiles.map((name, index) => {
+              const isCurrentProfile = name === profile.name;
+              const isActiveTarget =
+                activeTargetType === "profile" && activeTargetId === name;
+              const isSelfProfile = index === 0;
 
               return (
                 <View
-                  key={group.id}
-                  style={[styles.groupCard, isActive && styles.groupCardActive]}
+                  key={name}
+                  style={[
+                    styles.profileCard,
+                    isActiveTarget && styles.profileCardActive,
+                  ]}
                 >
                   <View style={{ flex: 1 }}>
                     <Text
                       style={[
-                        styles.groupCardTitle,
-                        isActive && styles.groupCardTitleActive,
+                        styles.profileCardTitle,
+                        isActiveTarget && styles.profileCardTitleActive,
                       ]}
                     >
-                      {group.name} {isActive ? "✓" : ""}
+                      {name}
+                      {isSelfProfile ? " (Self)" : ""}
+                      {isActiveTarget ? " ✓" : ""}
                     </Text>
-                    <Text style={styles.groupCardSubtitle}>
-                      Members: {group.members.join(", ")}
+
+                    <Text style={styles.profileCardSubtitle}>
+                      {isActiveTarget
+                        ? "Currently used by Inventory and Scanner"
+                        : "Available profile"}
                     </Text>
                   </View>
 
-                  <View style={styles.groupActions}>
-                    {!isActive ? (
+                  <View style={styles.profileActions}>
+                    {!isCurrentProfile ? (
                       <TouchableOpacity
-                        style={styles.groupActionButton}
+                        style={styles.profileActionButton}
                         onPress={async () => {
-                          await setActiveGroup(group.id);
+                          await switchProfile(name);
                         }}
                       >
-                        <Text style={styles.groupActionButtonText}>Use</Text>
+                        <Text style={styles.profileActionButtonText}>Edit</Text>
                       </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.groupUnuseButton}
-                        onPress={async () => {
-                          await clearActiveGroup();
-                        }}
-                      >
-                        <Text style={styles.groupUnuseButtonText}>Unuse</Text>
-                      </TouchableOpacity>
-                    )}
+                    ) : null}
 
-                    <TouchableOpacity
-                      style={styles.groupDeleteButton}
-                      onPress={async () => {
-                        await deleteGroupById(group.id);
-                      }}
-                    >
-                      <Ionicons
-                        name="trash-outline"
-                        size={18}
-                        color="#EF4444"
-                      />
-                    </TouchableOpacity>
+                    {!isActiveTarget ? (
+                      <TouchableOpacity
+                        style={styles.useButton}
+                        onPress={async () => {
+                          await setActiveTarget({
+                            type: "profile",
+                            id: name,
+                          });
+                        }}
+                      >
+                        <Text style={styles.useButtonText}>Use</Text>
+                      </TouchableOpacity>
+                    ) : null}
+
+                    {!isSelfProfile ? (
+                      <TouchableOpacity
+                        style={styles.profileDeleteButton}
+                        onPress={() =>
+                          deleteProfile(name, () => removeItemsByProfile(name))
+                        }
+                      >
+                        <Ionicons
+                          name="trash-outline"
+                          size={18}
+                          color="#EF4444"
+                        />
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
                 </View>
               );
@@ -328,27 +271,43 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.actionContainer}>
-          <TouchableOpacity style={styles.saveButton} onPress={syncToJac}>
-            <Text style={styles.saveButtonText}>Save to Cloud</Text>
+          <TouchableOpacity
+            style={styles.addProfileButton}
+            onPress={() => {
+              router.push({
+                pathname: "/login",
+                params: { canGoBack: "true" },
+              });
+            }}
+          >
+            <Text style={styles.addProfileButtonText}>
+              + Create New Profile
+            </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => setShowSwitchModal(true)}
-          >
-            <Text style={styles.switchButtonText}>Switch Profile</Text>
-          </TouchableOpacity>
+          {!isViewingCurrentProfile ? (
+            <View style={styles.noteBox}>
+              <Text style={styles.noteText}>
+                You are editing one profile while another target is currently in
+                use in Inventory/Scanner.
+              </Text>
+            </View>
+          ) : null}
 
-          <TouchableOpacity
-            style={styles.deleteMainButton}
-            onPress={() =>
-              deleteProfile(profile.name, () =>
-                removeItemsByProfile(profile.name),
-              )
-            }
-          >
-            <Text style={styles.deleteMainButtonText}>Delete This Profile</Text>
-          </TouchableOpacity>
+          {profiles[0] !== profile.name ? (
+            <TouchableOpacity
+              style={styles.deleteMainButton}
+              onPress={() =>
+                deleteProfile(profile.name, () =>
+                  removeItemsByProfile(profile.name),
+                )
+              }
+            >
+              <Text style={styles.deleteMainButtonText}>
+                Delete This Profile
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           <TouchableOpacity
             style={styles.logoutButton}
@@ -361,73 +320,6 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      <Modal visible={showSwitchModal} transparent animationType="fade">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Select User</Text>
-            {profiles.map((name) => (
-              <View
-                key={name}
-                style={[
-                  styles.profileOptionRow,
-                  name === profile.name && styles.profileOptionActive,
-                ]}
-              >
-                <TouchableOpacity
-                  style={{ flex: 1, paddingVertical: 15 }}
-                  onPress={async () => {
-                    await switchProfile(name);
-                    setShowSwitchModal(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.profileOptionText,
-                      name === profile.name && styles.activeText,
-                    ]}
-                  >
-                    {name} {name === profile.name && "✓"}
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  onPress={() =>
-                    deleteProfile(name, () => removeItemsByProfile(name))
-                  }
-                  style={styles.deleteIconButton}
-                >
-                  <Ionicons name="trash-outline" size={20} color="#EF4444" />
-                </TouchableOpacity>
-              </View>
-            ))}
-
-            <TouchableOpacity
-              style={styles.addProfileButton}
-              onPress={() => {
-                setShowSwitchModal(false);
-                router.push({
-                  pathname: "/login",
-                  params: { canGoBack: "true" },
-                });
-              }}
-            >
-              <Text style={styles.addProfileButtonText}>
-                + Create New Profile
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() => setShowSwitchModal(false)}
-              style={styles.modalClose}
-            >
-              <Text style={{ color: "#6B7280", fontWeight: "bold" }}>
-                Cancel
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -464,6 +356,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     textAlign: "center",
   },
+  autoSaveText: {
+    marginTop: 10,
+    fontSize: 13,
+    color: "#16A34A",
+    fontWeight: "600",
+  },
 
   section: {
     padding: 20,
@@ -475,6 +373,18 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#374151",
     marginBottom: 15,
+  },
+  helperText: {
+    fontSize: 14,
+    color: "#6B7280",
+    marginBottom: 14,
+    lineHeight: 20,
+  },
+  fieldLabel: {
+    fontSize: 15,
+    color: "#374151",
+    fontWeight: "600",
+    marginBottom: 10,
   },
 
   targetCard: {
@@ -503,17 +413,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6B7280",
     lineHeight: 18,
-  },
-  secondarySmallButton: {
-    backgroundColor: "#E5E7EB",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  secondarySmallButtonText: {
-    color: "#374151",
-    fontWeight: "700",
-    fontSize: 13,
   },
 
   chipContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
@@ -561,63 +460,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
 
-  groupNameInput: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: "#111827",
-    marginBottom: 14,
-  },
-  groupHelperText: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 10,
-    fontWeight: "600",
-  },
-  memberList: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-    marginBottom: 14,
-  },
-  memberChip: {
-    backgroundColor: "#F3F4F6",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-  memberChipSelected: {
-    backgroundColor: "#DBEAFE",
-    borderColor: "#60A5FA",
-  },
-  memberChipText: {
-    fontSize: 14,
-    color: "#374151",
-  },
-  memberChipTextSelected: {
-    color: "#1D4ED8",
-    fontWeight: "700",
-  },
-  createGroupButton: {
-    backgroundColor: "#2563EB",
-    padding: 14,
-    borderRadius: 12,
-    alignItems: "center",
-  },
-  createGroupButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "700",
-  },
-
   emptyText: {
     color: "#6B7280",
     fontSize: 14,
   },
-  groupCard: {
+
+  profileCard: {
     borderWidth: 1,
     borderColor: "#E5E7EB",
     borderRadius: 14,
@@ -627,57 +475,60 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 12,
   },
-  groupCardActive: {
+  profileCardActive: {
     backgroundColor: "#EFF6FF",
     borderColor: "#93C5FD",
   },
-  groupCardTitle: {
+  profileCardTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#111827",
     marginBottom: 4,
   },
-  groupCardTitleActive: {
+  profileCardTitleActive: {
     color: "#1D4ED8",
   },
-  groupCardSubtitle: {
+  profileCardSubtitle: {
     fontSize: 13,
     color: "#6B7280",
     lineHeight: 18,
   },
-  groupActions: {
+  profileActions: {
     flexDirection: "row",
     alignItems: "center",
     marginLeft: 12,
   },
-  groupActionButton: {
+  profileActionButton: {
+    backgroundColor: "#E5E7EB",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    marginRight: 8,
+  },
+  profileActionButtonText: {
+    color: "#374151",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  useButton: {
     backgroundColor: "#2563EB",
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: 10,
     marginRight: 8,
   },
-  groupActionButtonText: {
+  useButtonText: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
   },
-  groupDeleteButton: {
+  profileDeleteButton: {
     padding: 10,
     borderRadius: 10,
     backgroundColor: "#FEF2F2",
   },
 
   actionContainer: { padding: 20 },
-  saveButton: {
-    backgroundColor: "#10B981",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  saveButtonText: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-
   switchButton: {
     backgroundColor: "#E5E7EB",
     padding: 16,
@@ -686,6 +537,40 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   switchButtonText: { color: "#374151", fontSize: 16, fontWeight: "bold" },
+
+  addProfileButton: {
+    backgroundColor: "#F0FDF4",
+    padding: 16,
+    borderRadius: 12,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  addProfileButtonModal: {
+    backgroundColor: "#F0FDF4",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    marginTop: 15,
+  },
+  addProfileButtonText: {
+    color: "#16A34A",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+
+  noteBox: {
+    backgroundColor: "#FFF7ED",
+    borderWidth: 1,
+    borderColor: "#FED7AA",
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  noteText: {
+    color: "#9A3412",
+    fontSize: 14,
+    lineHeight: 20,
+  },
 
   deleteMainButton: {
     backgroundColor: "#FEF2F2",
@@ -730,26 +615,5 @@ const styles = StyleSheet.create({
   profileOptionText: { fontSize: 16, color: "#374151" },
   activeText: { color: "#3B82F6", fontWeight: "bold" },
   deleteIconButton: { padding: 10 },
-  addProfileButton: {
-    backgroundColor: "#F0FDF4",
-    padding: 15,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 15,
-  },
-  addProfileButtonText: { color: "#16A34A", fontWeight: "bold", fontSize: 16 },
   modalClose: { marginTop: 20, alignItems: "center" },
-  groupUnuseButton: {
-    backgroundColor: "#E5E7EB",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 10,
-    marginRight: 8,
-  },
-
-  groupUnuseButtonText: {
-    color: "#374151",
-    fontSize: 13,
-    fontWeight: "700",
-  },
 });

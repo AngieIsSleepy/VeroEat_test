@@ -1,67 +1,17 @@
 {
   "inventory_by_user": {
-    "Angie": [],
+    "p1": [],
     "Rania": [
       {
-        "id": "item_1774460007103_6kszxrg",
-        "name": "American",
-        "barcode": "021000615261",
+        "id": "item_1774559284747_v7bfo67",
+        "name": "Duo Fruit + Cool Strawberry",
+        "barcode": "03466506",
         "imageUrl": null,
-        "addedAt": 1774460007103,
-        "scannedBy": "Rania",
-        "isSafe": false,
-        "expiryDate": null,
-        "ingredientsSummary": "milk, cheddar cheese (milk, cheese culture, salt, enzymes), whey, milk protein concentrate, milkfat, calcium phosphate, sodium phosphate, contains less than 2% of modified food starch, whey protéin concentrate, salt lactic acid, annatto and paprika extract (color), natamycin (a natural mold inhibitor), enzymes, cheese culture, vitamin d3",
-        "recallStatus": "none",
-        "recallTitle": "",
-        "recallReason": "",
-        "recalledAt": 1398830400000,
-        "lastRecallCheckedAt": 1774462819530
-      },
-      {
-        "id": "item_1774459967253_hl3viic",
-        "name": "Gummies C Extra Strength",
-        "barcode": "031604040307",
-        "imageUrl": null,
-        "addedAt": 1774459967253,
+        "addedAt": 1774559284747,
         "scannedBy": "Rania",
         "isSafe": true,
         "expiryDate": null,
-        "ingredientsSummary": "sugar, glucose syrup, water, pectin, citric acid, natural flavors, color.",
-        "recallStatus": "none",
-        "recallTitle": "",
-        "recallReason": "",
-        "recalledAt": 1752033600000,
-        "lastRecallCheckedAt": 1774462819530
-      },
-      {
-        "id": "item_1774459930556_sd4cph5",
-        "name": "Purified Water",
-        "barcode": "049000027624",
-        "imageUrl": null,
-        "addedAt": 1774459930556,
-        "scannedBy": "Rania",
-        "isSafe": true,
-        "expiryDate": null,
-        "ingredientsSummary": "purified water, magnesium sulfate, potassium chloride, salt",
-        "recallStatus": "none",
-        "recallTitle": "",
-        "recallReason": "",
-        "recalledAt": 1662523200000,
-        "lastRecallCheckedAt": 1774462819530
-      }
-    ],
-    "rqr": [
-      {
-        "id": "item_1774462973614_87ncld9",
-        "name": "Total whole grain flakes",
-        "barcode": "016000275638",
-        "imageUrl": null,
-        "addedAt": 1774462973614,
-        "scannedBy": "rqr",
-        "isSafe": false,
-        "expiryDate": null,
-        "ingredientsSummary": "whole wheat, sugar, corn syrup, salt. vitamin e (mixed tocopherols) added to preserve freshness. vitamins and minerals: vitamin c (sodium ascorbate), vitamin e acetate, iron and zinc (mineral nutrients), ab vitamin (niacinamide), ab vitamin (calcium pantothenate), vitamin b6 (pyridoxine hydrochloride), vitamin b2 (riboflavin), vitamin b, (thiamin mononitrate), a b vitamin (folic acid), vitamin a (palmitate), vitamin b12, vitamin d3. contains wheat; may contain almond ingrediénts.",
+        "ingredientsSummary": "sorbitol, maltodextrin, 2% malic acid, magnesium stearate, maltitol, aspartame, citric acid, artificial flavor, modified cornstarch, hydrogenated vegetable oil (soybean oil, cottonseed oil, palm oil), artificial color (red 40 lake, red 40, blue 1), gum acacia, lecithin (soy).",
         "recallStatus": "none",
         "recallTitle": "",
         "recallReason": "",
@@ -71,7 +21,11 @@
     ]
   },
   "recall_settings_by_user": {
-    "rqr": {
+    "p1": {
+      "recallAlertsEnabled": true,
+      "expoPushToken": "ExponentPushToken[XIVBazGuwNMRvQpPGiNjrA]"
+    },
+    "Rania": {
       "recallAlertsEnabled": true,
       "expoPushToken": "ExponentPushToken[XIVBazGuwNMRvQpPGiNjrA]"
     }

@@ -1,7 +1,14 @@
 import { API_BASE_URL } from "@/app/config";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Alert } from "react-native";
 
 interface ProfileData {
@@ -17,6 +24,15 @@ interface GroupData {
   members: string[];
 }
 
+type ActiveTargetType = "profile" | "group";
+
+type ActiveTargetOption = {
+  id: string;
+  type: ActiveTargetType;
+  label: string;
+  subtitle?: string;
+};
+
 interface ProfileContextType {
   profile: ProfileData;
   profiles: string[];
@@ -24,12 +40,23 @@ interface ProfileContextType {
   activeMode: "profile" | "group";
   activeGroup: GroupData | null;
   isLoading: boolean;
+
+  activeTargetType: ActiveTargetType;
+  activeTargetId: string;
+  activeTargetLabel: string;
+
+  setActiveProfile: (name: string) => Promise<void>;
+  setActiveTarget: (target: {
+    type: ActiveTargetType;
+    id: string;
+  }) => Promise<void>;
+  getAllTargetOptions: () => ActiveTargetOption[];
+
   login: (username: string) => Promise<boolean>;
   logout: () => Promise<void>;
   switchProfile: (name: string) => Promise<void>;
   deleteProfile: (name: string, onSuccess?: () => void) => Promise<void>;
   updateProfileLocally: (data: Partial<ProfileData>) => void;
-  syncToJac: () => Promise<void>;
 
   createGroup: (name: string, members: string[]) => Promise<void>;
   updateGroup: (
@@ -43,6 +70,12 @@ interface ProfileContextType {
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined);
+
+const GROUPS_STORAGE_KEY = "groups";
+const PROFILES_STORAGE_KEY = "profiles";
+const CURRENT_USER_STORAGE_KEY = "currentUser";
+const ACTIVE_MODE_STORAGE_KEY = "activeMode";
+const ACTIVE_GROUP_ID_STORAGE_KEY = "activeGroupId";
 
 async function fetchWithTimeout(
   url: string,
@@ -77,70 +110,78 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   });
   const [isLoading, setIsLoading] = useState(true);
 
+  const isApplyingRemoteProfileRef = useRef(false);
+  const skipNextProfileSyncRef = useRef(false);
+
+  const activeTargetType: ActiveTargetType =
+    activeMode === "group" && activeGroup ? "group" : "profile";
+
+  const activeTargetId = useMemo(() => {
+    if (activeMode === "group" && activeGroup) {
+      return activeGroup.id;
+    }
+    return profile.name || "Guest";
+  }, [activeMode, activeGroup, profile.name]);
+
+  const activeTargetLabel = useMemo(() => {
+    if (activeMode === "group" && activeGroup) {
+      return activeGroup.name;
+    }
+    return profile.name || "Guest";
+  }, [activeMode, activeGroup, profile.name]);
+
   useEffect(() => {
     checkLoginStatus();
   }, []);
 
-  const persistGroups = async (nextGroups: GroupData[]) => {
-    await AsyncStorage.setItem("groups", JSON.stringify(nextGroups));
+  const persistGroupsLocally = async (nextGroups: GroupData[]) => {
+    await AsyncStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(nextGroups));
   };
 
-  const checkLoginStatus = async () => {
+  const persistProfilesLocally = async (nextProfiles: string[]) => {
+    await AsyncStorage.setItem(
+      PROFILES_STORAGE_KEY,
+      JSON.stringify(nextProfiles),
+    );
+  };
+
+  const persistProfileCache = async (data: ProfileData) => {
+    if (!data.name) return;
+    await AsyncStorage.setItem(`cache_${data.name}`, JSON.stringify(data));
+  };
+
+  const syncProfileToBackend = async (profileData: ProfileData) => {
+    if (!profileData.name || profileData.name === "Guest") return;
+
     try {
-      const savedProfiles = await AsyncStorage.getItem("profiles");
-      const savedCurrent = await AsyncStorage.getItem("currentUser");
-      const savedGroups = await AsyncStorage.getItem("groups");
-      const savedActiveMode = await AsyncStorage.getItem("activeMode");
-      const savedActiveGroupId = await AsyncStorage.getItem("activeGroupId");
-
-      let parsedGroups: GroupData[] = [];
-
-      if (savedProfiles) {
-        setProfiles(JSON.parse(savedProfiles));
-      }
-
-      if (savedGroups) {
-        parsedGroups = JSON.parse(savedGroups);
-        setGroups(parsedGroups);
-      }
-
-      if (savedActiveMode === "group") {
-        setActiveMode("group");
-      }
-
-      if (savedActiveGroupId && parsedGroups.length > 0) {
-        const matchedGroup =
-          parsedGroups.find((group) => group.id === savedActiveGroupId) || null;
-        setActiveGroupState(matchedGroup);
-      }
-
-      if (savedCurrent) {
-        const cached = await AsyncStorage.getItem(`cache_${savedCurrent}`);
-        if (cached) {
-          setProfile(JSON.parse(cached));
-        } else {
-          setProfile({
-            name: savedCurrent,
-            location: "",
-            allergens: [],
-            dietary_preferences: [],
-          });
-        }
-      }
+      await fetchWithTimeout(
+        `${API_BASE_URL}/walker/create_or_update_user`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profileData),
+        },
+        5000,
+      );
     } catch (e) {
-      console.error("Initialization error", e);
-    } finally {
-      setIsLoading(false);
+      console.log("Auto profile sync failed:", e);
     }
+  };
 
+  const syncGroupsToBackend = async (nextGroups: GroupData[]) => {
     try {
-      const savedCurrent = await AsyncStorage.getItem("currentUser");
-      if (savedCurrent) {
-        fetchProfileFromJac(savedCurrent).catch(() => {
-          console.log("Background profile refresh failed");
-        });
-      }
-    } catch {}
+      await fetchWithTimeout(
+        `${API_BASE_URL}/groups/sync`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groups: nextGroups }),
+        },
+        5000,
+      );
+    } catch (e) {
+      console.log("Auto group sync failed:", e);
+    }
   };
 
   const fetchProfileFromJac = async (username: string) => {
@@ -172,14 +213,133 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           : [],
       };
 
+      isApplyingRemoteProfileRef.current = true;
+      skipNextProfileSyncRef.current = true;
+
       setProfile(serverData);
-      await AsyncStorage.setItem(
-        `cache_${username}`,
-        JSON.stringify(serverData),
-      );
-    } catch (e) {
-      console.log("Network error, kept local data.");
+      await persistProfileCache(serverData);
+
+      setTimeout(() => {
+        isApplyingRemoteProfileRef.current = false;
+      }, 0);
+    } catch {
+      console.log("Network error, kept local profile data.");
     }
+  };
+
+  const fetchGroupsFromBackend = async () => {
+    try {
+      const res = await fetchWithTimeout(`${API_BASE_URL}/groups`, {}, 4000);
+      const json = await res.json();
+
+      const remoteGroups: GroupData[] = Array.isArray(json?.groups)
+        ? json.groups
+        : [];
+
+      if (!remoteGroups.length) return;
+
+      setGroups(remoteGroups);
+      await persistGroupsLocally(remoteGroups);
+
+      const savedActiveGroupId = await AsyncStorage.getItem(
+        ACTIVE_GROUP_ID_STORAGE_KEY,
+      );
+      if (savedActiveGroupId) {
+        const matched =
+          remoteGroups.find((group) => group.id === savedActiveGroupId) || null;
+        setActiveGroupState(matched);
+      }
+    } catch {
+      console.log("Background group refresh failed");
+    }
+  };
+
+  const ensureSelfProfileExists = async (name: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return;
+
+    const nextProfiles = profiles.includes(trimmedName)
+      ? profiles
+      : [trimmedName, ...profiles.filter((p) => p !== trimmedName)];
+
+    setProfiles(nextProfiles);
+    await persistProfilesLocally(nextProfiles);
+  };
+
+  const checkLoginStatus = async () => {
+    try {
+      const savedProfiles = await AsyncStorage.getItem(PROFILES_STORAGE_KEY);
+      const savedCurrent = await AsyncStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      const savedGroups = await AsyncStorage.getItem(GROUPS_STORAGE_KEY);
+      const savedActiveMode = await AsyncStorage.getItem(
+        ACTIVE_MODE_STORAGE_KEY,
+      );
+      const savedActiveGroupId = await AsyncStorage.getItem(
+        ACTIVE_GROUP_ID_STORAGE_KEY,
+      );
+
+      let parsedGroups: GroupData[] = [];
+      let parsedProfiles: string[] = [];
+
+      if (savedProfiles) {
+        parsedProfiles = JSON.parse(savedProfiles);
+        setProfiles(parsedProfiles);
+      }
+
+      if (savedGroups) {
+        parsedGroups = JSON.parse(savedGroups);
+        setGroups(parsedGroups);
+      }
+
+      if (savedActiveMode === "group") {
+        setActiveMode("group");
+      }
+
+      if (savedActiveGroupId && parsedGroups.length > 0) {
+        const matchedGroup =
+          parsedGroups.find((group) => group.id === savedActiveGroupId) || null;
+        setActiveGroupState(matchedGroup);
+      }
+
+      if (savedCurrent) {
+        const cached = await AsyncStorage.getItem(`cache_${savedCurrent}`);
+
+        if (cached) {
+          setProfile(JSON.parse(cached));
+        } else {
+          const emptyProfile = {
+            name: savedCurrent,
+            location: "",
+            allergens: [],
+            dietary_preferences: [],
+          };
+          setProfile(emptyProfile);
+          await persistProfileCache(emptyProfile);
+        }
+
+        if (!parsedProfiles.includes(savedCurrent)) {
+          const nextProfiles = [savedCurrent, ...parsedProfiles];
+          setProfiles(nextProfiles);
+          await persistProfilesLocally(nextProfiles);
+        }
+      }
+    } catch (e) {
+      console.error("Initialization error", e);
+    } finally {
+      setIsLoading(false);
+    }
+
+    try {
+      const savedCurrent = await AsyncStorage.getItem(CURRENT_USER_STORAGE_KEY);
+      if (savedCurrent) {
+        fetchProfileFromJac(savedCurrent).catch(() => {
+          console.log("Background profile refresh failed");
+        });
+      }
+      fetchGroupsFromBackend().catch(() => {
+        console.log("Background group refresh failed");
+      });
+    } catch {}
   };
 
   const login = async (username: string) => {
@@ -189,16 +349,16 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
-      const savedProfiles = await AsyncStorage.getItem("profiles");
+      const savedProfiles = await AsyncStorage.getItem(PROFILES_STORAGE_KEY);
       let profileList = savedProfiles ? JSON.parse(savedProfiles) : [];
 
       if (!profileList.includes(trimmedName)) {
-        profileList = [...profileList, trimmedName];
-        await AsyncStorage.setItem("profiles", JSON.stringify(profileList));
+        profileList = [trimmedName, ...profileList];
+        await persistProfilesLocally(profileList);
       }
 
       setProfiles(profileList);
-      await AsyncStorage.setItem("currentUser", trimmedName);
+      await AsyncStorage.setItem(CURRENT_USER_STORAGE_KEY, trimmedName);
 
       const cached = await AsyncStorage.getItem(`cache_${trimmedName}`);
       if (cached) {
@@ -211,10 +371,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           dietary_preferences: [],
         };
         setProfile(emptyProfile);
-        await AsyncStorage.setItem(
-          `cache_${trimmedName}`,
-          JSON.stringify(emptyProfile),
-        );
+        await persistProfileCache(emptyProfile);
+        syncProfileToBackend(emptyProfile).catch(() => {
+          console.log("Initial profile auto sync failed");
+        });
       }
 
       setIsLoading(false);
@@ -225,6 +385,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
       return true;
     } catch {
+      setIsLoading(false);
       return false;
     }
   };
@@ -233,7 +394,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
 
     try {
-      await AsyncStorage.setItem("currentUser", name);
+      await AsyncStorage.setItem(CURRENT_USER_STORAGE_KEY, name);
 
       const cached = await AsyncStorage.getItem(`cache_${name}`);
       if (cached) {
@@ -246,14 +407,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
           dietary_preferences: [],
         };
         setProfile(emptyProfile);
-        await AsyncStorage.setItem(
-          `cache_${name}`,
-          JSON.stringify(emptyProfile),
-        );
+        await persistProfileCache(emptyProfile);
+        syncProfileToBackend(emptyProfile).catch(() => {
+          console.log("Initial switched profile auto sync failed");
+        });
       }
 
-      await AsyncStorage.setItem("activeMode", "profile");
-      await AsyncStorage.removeItem("activeGroupId");
+      await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "profile");
+      await AsyncStorage.removeItem(ACTIVE_GROUP_ID_STORAGE_KEY);
       setActiveMode("profile");
       setActiveGroupState(null);
 
@@ -265,6 +426,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     } catch {
       setIsLoading(false);
     }
+  };
+
+  const setActiveProfile = async (name: string) => {
+    await switchProfile(name);
   };
 
   const deleteProfile = async (name: string, onSuccess?: () => void) => {
@@ -280,12 +445,8 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
             try {
               const newProfiles = profiles.filter((p) => p !== name);
 
-              await AsyncStorage.setItem(
-                "profiles",
-                JSON.stringify(newProfiles),
-              );
+              await persistProfilesLocally(newProfiles);
               await AsyncStorage.removeItem(`cache_${name}`);
-
               setProfiles(newProfiles);
 
               const newGroups = groups
@@ -296,14 +457,17 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
                 .filter((group) => group.members.length > 0);
 
               setGroups(newGroups);
-              await persistGroups(newGroups);
+              await persistGroupsLocally(newGroups);
+              syncGroupsToBackend(newGroups).catch(() => {
+                console.log("Group auto sync after profile delete failed");
+              });
 
               if (
                 activeGroup &&
                 newGroups.every((group) => group.id !== activeGroup.id)
               ) {
-                await AsyncStorage.setItem("activeMode", "profile");
-                await AsyncStorage.removeItem("activeGroupId");
+                await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "profile");
+                await AsyncStorage.removeItem(ACTIVE_GROUP_ID_STORAGE_KEY);
                 setActiveMode("profile");
                 setActiveGroupState(null);
               } else if (activeGroup) {
@@ -337,42 +501,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
-  const syncToJac = async () => {
-    try {
-      const res = await fetchWithTimeout(
-        `${API_BASE_URL}/walker/create_or_update_user`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(profile),
-        },
-        5000,
-      );
-
-      const json = await res.json();
-      console.log("syncToJac response:", json);
-
-      if (!res.ok || json?.status !== "success") {
-        Alert.alert("Error", json?.message || "Cloud sync failed");
-        return;
-      }
-
-      await AsyncStorage.setItem(
-        `cache_${profile.name}`,
-        JSON.stringify(profile),
-      );
-
-      Alert.alert("Success 🎉", "Settings saved!");
-    } catch (e) {
-      console.log("syncToJac error:", e);
-      Alert.alert("Error", "Cloud sync failed");
-    }
-  };
-
   const logout = async () => {
-    await AsyncStorage.removeItem("currentUser");
-    await AsyncStorage.setItem("activeMode", "profile");
-    await AsyncStorage.removeItem("activeGroupId");
+    await AsyncStorage.removeItem(CURRENT_USER_STORAGE_KEY);
+    await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "profile");
+    await AsyncStorage.removeItem(ACTIVE_GROUP_ID_STORAGE_KEY);
 
     setActiveMode("profile");
     setActiveGroupState(null);
@@ -390,10 +522,7 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
       const newProfile = { ...prev, ...data };
 
       if (newProfile.name) {
-        AsyncStorage.setItem(
-          `cache_${newProfile.name}`,
-          JSON.stringify(newProfile),
-        ).catch(console.error);
+        persistProfileCache(newProfile).catch(console.error);
       }
 
       return newProfile;
@@ -425,7 +554,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     const nextGroups = [...groups, newGroup];
     setGroups(nextGroups);
-    await persistGroups(nextGroups);
+    await persistGroupsLocally(nextGroups);
+    syncGroupsToBackend(nextGroups).catch(() => {
+      console.log("Auto group sync after create failed");
+    });
   };
 
   const updateGroup = async (
@@ -451,7 +583,10 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
     });
 
     setGroups(nextGroups);
-    await persistGroups(nextGroups);
+    await persistGroupsLocally(nextGroups);
+    syncGroupsToBackend(nextGroups).catch(() => {
+      console.log("Auto group sync after update failed");
+    });
 
     if (activeGroup?.id === groupId) {
       const updated = nextGroups.find((group) => group.id === groupId) || null;
@@ -462,11 +597,14 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
   const deleteGroupById = async (groupId: string) => {
     const nextGroups = groups.filter((group) => group.id !== groupId);
     setGroups(nextGroups);
-    await persistGroups(nextGroups);
+    await persistGroupsLocally(nextGroups);
+    syncGroupsToBackend(nextGroups).catch(() => {
+      console.log("Auto group sync after delete failed");
+    });
 
     if (activeGroup?.id === groupId) {
-      await AsyncStorage.setItem("activeMode", "profile");
-      await AsyncStorage.removeItem("activeGroupId");
+      await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "profile");
+      await AsyncStorage.removeItem(ACTIVE_GROUP_ID_STORAGE_KEY);
       setActiveMode("profile");
       setActiveGroupState(null);
     }
@@ -482,15 +620,47 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
     setActiveMode("group");
     setActiveGroupState(matchedGroup);
-    await AsyncStorage.setItem("activeMode", "group");
-    await AsyncStorage.setItem("activeGroupId", groupId);
+    await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "group");
+    await AsyncStorage.setItem(ACTIVE_GROUP_ID_STORAGE_KEY, groupId);
   };
 
   const clearActiveGroup = async () => {
     setActiveMode("profile");
     setActiveGroupState(null);
-    await AsyncStorage.setItem("activeMode", "profile");
-    await AsyncStorage.removeItem("activeGroupId");
+    await AsyncStorage.setItem(ACTIVE_MODE_STORAGE_KEY, "profile");
+    await AsyncStorage.removeItem(ACTIVE_GROUP_ID_STORAGE_KEY);
+  };
+
+  const setActiveTarget = async (target: {
+    type: ActiveTargetType;
+    id: string;
+  }) => {
+    if (target.type === "profile") {
+      await setActiveProfile(target.id);
+      return;
+    }
+
+    await setActiveGroup(target.id);
+  };
+
+  const getAllTargetOptions = (): ActiveTargetOption[] => {
+    const profileOptions: ActiveTargetOption[] = profiles.map((name) => ({
+      id: name,
+      type: "profile",
+      label: name,
+      subtitle: "Profile",
+    }));
+
+    const groupOptions: ActiveTargetOption[] = groups.map((group) => ({
+      id: group.id,
+      type: "group",
+      label: group.name,
+      subtitle: `${group.members.length} member${
+        group.members.length === 1 ? "" : "s"
+      }`,
+    }));
+
+    return [...profileOptions, ...groupOptions];
   };
 
   const getActiveAllergens = async (): Promise<string[]> => {
@@ -511,13 +681,32 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
             allergenSet.add(allergen.trim().toLowerCase());
           }
         }
-      } catch (e) {
+      } catch {
         console.log("Failed to parse cached profile", memberName);
       }
     }
 
     return Array.from(allergenSet);
   };
+
+  useEffect(() => {
+    if (!profile.name || profile.name === "Guest") return;
+    if (isApplyingRemoteProfileRef.current) return;
+
+    if (skipNextProfileSyncRef.current) {
+      skipNextProfileSyncRef.current = false;
+      return;
+    }
+
+    syncProfileToBackend(profile).catch(() => {
+      console.log("Auto profile sync failed");
+    });
+  }, [profile]);
+
+  useEffect(() => {
+    if (!profile.name) return;
+    ensureSelfProfileExists(profile.name).catch(console.error);
+  }, [profile.name]);
 
   return (
     <ProfileContext.Provider
@@ -527,19 +716,27 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
         groups,
         activeMode,
         activeGroup,
+
+        activeTargetType,
+        activeTargetId,
+        activeTargetLabel,
+
         isLoading,
         login,
         logout,
         switchProfile,
+        setActiveProfile,
+        setActiveTarget,
         deleteProfile,
         updateProfileLocally,
-        syncToJac,
+
         createGroup,
         updateGroup,
         deleteGroupById,
         setActiveGroup,
         clearActiveGroup,
         getActiveAllergens,
+        getAllTargetOptions,
       }}
     >
       {children}

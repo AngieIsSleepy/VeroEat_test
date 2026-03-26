@@ -3,7 +3,7 @@ import { ThemedView } from "@/components/themed-view";
 import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,25 +14,50 @@ import {
 } from "react-native";
 
 export default function InventoryScreen() {
-  const { items, removeItem, clear, runRecallCheckForCurrentProfile } =
+  const { items, removeItem, clear, runRecallCheckForCurrentTarget } =
     useInventory();
-  const { profile, activeMode, activeGroup } = useProfile();
+
+  const {
+    activeTargetType,
+    activeTargetLabel,
+    getAllTargetOptions,
+    setActiveTarget,
+  } = useProfile();
+
   const [checkingRecall, setCheckingRecall] = useState(false);
 
-  const currentTargetLabel = useMemo(() => {
-    if (activeMode === "group" && activeGroup) {
-      return activeGroup.name;
-    }
-    return profile.name || "Guest";
-  }, [activeMode, activeGroup, profile.name]);
-
-  const currentTargetTypeLabel = useMemo(() => {
-    return activeMode === "group" && activeGroup ? "Current group" : "Current profile";
-  }, [activeMode, activeGroup]);
+  const currentTargetTypeLabel =
+    activeTargetType === "group" ? "Current group" : "Current profile";
 
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return "No Date";
     return new Date(timestamp).toLocaleDateString();
+  };
+
+  const handleSwitchTarget = () => {
+    const options = getAllTargetOptions();
+
+    Alert.alert(
+      "Switch Inventory Target",
+      "Choose which profile or group inventory to view.",
+      [
+        ...options.map((option) => ({
+          text:
+            option.type === "group"
+              ? `Group: ${option.label}`
+              : `Profile: ${option.label}`,
+          onPress: () =>
+            setActiveTarget({
+              type: option.type,
+              id: option.id,
+            }),
+        })),
+        {
+          text: "Cancel",
+          style: "cancel" as const,
+        },
+      ],
+    );
   };
 
   const showIngredientsDetail = (
@@ -56,27 +81,12 @@ export default function InventoryScreen() {
   };
 
   const handleRecallCheck = async () => {
-    if (!profile.name || profile.name === "Guest") {
-      Alert.alert(
-        "No Profile Selected",
-        "Please switch to a profile before checking recalls.",
-      );
-      return;
-    }
-
-    if (activeMode === "group" && activeGroup) {
-      Alert.alert(
-        "Recall Check Uses Current Profile",
-        `Group mode is active for scanning, but recall checks still run for the current profile: ${profile.name}.`,
-      );
-    }
-
     setCheckingRecall(true);
     try {
-      await runRecallCheckForCurrentProfile();
+      await runRecallCheckForCurrentTarget();
       Alert.alert(
         "Recall Check Complete",
-        `Finished checking recalls for ${profile.name}.`,
+        `Finished checking recalls for ${activeTargetLabel}.`,
       );
     } catch {
       Alert.alert("Error", "Failed to check recall information.");
@@ -88,16 +98,20 @@ export default function InventoryScreen() {
   return (
     <ThemedView style={styles.container}>
       <View style={styles.header}>
-        <View>
+        <View style={{ flex: 1 }}>
           <ThemedText type="title">Inventory</ThemedText>
           <ThemedText style={styles.profileLabel}>
-            {currentTargetTypeLabel}: {currentTargetLabel}
+            {currentTargetTypeLabel}: {activeTargetLabel}
           </ThemedText>
-          {activeMode === "group" && activeGroup ? (
-            <ThemedText style={styles.groupMembersLabel}>
-              Members: {activeGroup.members.join(", ")}
+
+          <Pressable
+            style={styles.switchTargetButton}
+            onPress={handleSwitchTarget}
+          >
+            <ThemedText style={styles.switchTargetButtonText}>
+              Switch Profile / Group
             </ThemedText>
-          ) : null}
+          </Pressable>
         </View>
 
         <Pressable
@@ -106,7 +120,7 @@ export default function InventoryScreen() {
             if (items.length === 0) return;
             Alert.alert(
               "Clear inventory?",
-              `This will remove all items for ${currentTargetLabel}.`,
+              `This will remove all items for ${activeTargetLabel}.`,
               [
                 { text: "Cancel", style: "cancel" },
                 { text: "Clear All", style: "destructive", onPress: clear },
@@ -148,8 +162,8 @@ export default function InventoryScreen() {
         <View style={styles.emptyContainer}>
           <Ionicons name="basket-outline" size={64} color="#CBD5E1" />
           <ThemedText style={styles.empty}>
-            {activeMode === "group" && activeGroup
-              ? "No items yet for this group view. Scan a product to start."
+            {activeTargetType === "group"
+              ? "No items yet for this group. Scan a product to start."
               : "No items yet for this profile. Scan a product to start."}
           </ThemedText>
         </View>
@@ -162,6 +176,7 @@ export default function InventoryScreen() {
             const isExpired = item.expiryDate
               ? item.expiryDate < Date.now()
               : false;
+
             const daysLeft = item.expiryDate
               ? Math.ceil(
                   (item.expiryDate - Date.now()) / (1000 * 60 * 60 * 24),
@@ -351,7 +366,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     justifyContent: "space-between",
     marginBottom: 20,
   },
@@ -360,13 +375,25 @@ const styles = StyleSheet.create({
     color: "#CBD5E1",
     fontSize: 13,
   },
-  groupMembersLabel: {
-    marginTop: 2,
-    color: "#94A3B8",
-    fontSize: 12,
+  clearBtn: {
+    padding: 4,
+    marginLeft: 12,
+    marginTop: 4,
   },
-  clearBtn: { padding: 4 },
-
+  switchTargetButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "rgba(59,130,246,0.12)",
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  switchTargetButtonText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#60A5FA",
+  },
   recallCheckButton: {
     flexDirection: "row",
     alignItems: "center",
@@ -385,7 +412,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "700",
   },
-
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -398,7 +424,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     textAlign: "center",
   },
-  list: { paddingBottom: 40 },
+  list: {
+    paddingBottom: 40,
+  },
   card: {
     padding: 16,
     borderRadius: 16,
@@ -433,7 +461,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "uppercase",
   },
-  row: { flexDirection: "row", alignItems: "center", gap: 12 },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
   titleRow: {
     flexDirection: "row",
     alignItems: "center",

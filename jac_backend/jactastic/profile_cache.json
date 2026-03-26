@@ -33,6 +33,24 @@
         "gluten"
       ],
       "dietary_preferences": []
+    },
+    "rqr": {
+      "name": "rqr",
+      "location": "",
+      "allergens": [
+        "gluten",
+        "wheat"
+      ],
+      "dietary_preferences": []
+    },
+    "p1": {
+      "name": "p1",
+      "location": "",
+      "allergens": [
+        "sesame",
+        "crustacean shellfish"
+      ],
+      "dietary_preferences": []
     }
   }
 }

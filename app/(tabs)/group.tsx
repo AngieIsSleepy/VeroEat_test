@@ -17,13 +17,13 @@ export default function GroupScreen() {
   const {
     profiles,
     groups,
-    activeMode,
-    activeGroup,
+    activeTargetType,
+    activeTargetId,
+    activeTargetLabel,
     createGroup,
     updateGroup,
     deleteGroupById,
-    setActiveGroup,
-    clearActiveGroup,
+    setActiveTarget,
   } = useProfile();
 
   const [groupName, setGroupName] = useState("");
@@ -37,11 +37,11 @@ export default function GroupScreen() {
   const hasMembers = profiles.length > 0;
 
   const currentTargetLabel = useMemo(() => {
-    if (activeMode === "group" && activeGroup) {
-      return `Active Group: ${activeGroup.name}`;
+    if (activeTargetType === "group") {
+      return `Current target: ${activeTargetLabel} (Group)`;
     }
-    return "Using Individual Profile Mode";
-  }, [activeMode, activeGroup]);
+    return `Current target: ${activeTargetLabel} (Profile)`;
+  }, [activeTargetType, activeTargetLabel]);
 
   const toggleCreateMember = (name: string) => {
     setSelectedMembers((prev) =>
@@ -75,6 +75,7 @@ export default function GroupScreen() {
     await createGroup(trimmedName, selectedMembers);
     setGroupName("");
     setSelectedMembers([]);
+    Alert.alert("Success", "Group created and saved.");
   };
 
   const openEditModal = (group: {
@@ -112,6 +113,7 @@ export default function GroupScreen() {
     setEditingGroupId(null);
     setEditingName("");
     setEditingMembers([]);
+    Alert.alert("Success", "Group updated and saved.");
   };
 
   const handleDeleteGroup = (groupId: string, groupName: string) => {
@@ -136,18 +138,10 @@ export default function GroupScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.headerCard}>
           <Text style={styles.headerTitle}>Groups</Text>
-          <Text style={styles.headerSubtitle}>{currentTargetLabel}</Text>
-
-          {activeMode === "group" && activeGroup ? (
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={clearActiveGroup}
-            >
-              <Text style={styles.secondaryButtonText}>
-                Switch Back to Profile Mode
-              </Text>
-            </TouchableOpacity>
-          ) : null}
+          <Text style={styles.headerSubtitle}>
+            Create, edit, delete, and manage group members.
+          </Text>
+          <Text style={styles.currentTargetText}>{currentTargetLabel}</Text>
         </View>
 
         <View style={styles.section}>
@@ -166,7 +160,8 @@ export default function GroupScreen() {
           {!hasMembers ? (
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>
-                No members available yet. Create members first from your profile flow.
+                No profiles available yet. Create profiles first in the Profile
+                tab.
               </Text>
             </View>
           ) : (
@@ -215,7 +210,7 @@ export default function GroupScreen() {
           ) : (
             groups.map((group) => {
               const isActive =
-                activeMode === "group" && activeGroup?.id === group.id;
+                activeTargetType === "group" && activeTargetId === group.id;
 
               return (
                 <View
@@ -243,21 +238,15 @@ export default function GroupScreen() {
                         <TouchableOpacity
                           style={styles.textActionButton}
                           onPress={async () => {
-                            await setActiveGroup(group.id);
+                            await setActiveTarget({
+                              type: "group",
+                              id: group.id,
+                            });
                           }}
                         >
                           <Text style={styles.useButtonText}>Use</Text>
                         </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity
-                          style={styles.textActionButtonSecondary}
-                          onPress={async () => {
-                            await clearActiveGroup();
-                          }}
-                        >
-                          <Text style={styles.unuseButtonText}>Unuse</Text>
-                        </TouchableOpacity>
-                      )}
+                      ) : null}
 
                       <TouchableOpacity
                         style={styles.iconButton}
@@ -393,7 +382,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#6B7280",
     marginTop: 6,
+    marginBottom: 8,
+  },
+  currentTargetText: {
+    fontSize: 14,
+    color: "#374151",
     marginBottom: 14,
+    fontWeight: "600",
   },
 
   section: {

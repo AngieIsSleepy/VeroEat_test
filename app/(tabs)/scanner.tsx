@@ -3,7 +3,7 @@ import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -14,7 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { styles } from './_scanner.styles';
+import { styles } from "./_scanner.styles";
 
 const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   peanuts: ["peanut", "peanuts", "groundnut"],
@@ -29,8 +29,6 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   sesame: ["sesame", "sesame oil"],
 };
 
-const BABY_RULES = ["honey", "sugar", "salt", "palm oil"];
-
 interface ScanResult {
   type: "safe" | "unsafe" | "not_found";
   name: string;
@@ -38,7 +36,7 @@ interface ScanResult {
   ingredients: string;
   imageUrl: string | null;
   matchedAllergens: string[];
-  currentMode: string;
+  currentTargetLabel: string;
 }
 
 export default function CameraScreen() {
@@ -49,18 +47,18 @@ export default function CameraScreen() {
   const [scanResult, setScanResult] = useState<ScanResult | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [alternatives, setAlternatives] = useState<any[] | null>(null);
-  const [explainedIngredients, setExplainedIngredients] = useState<any[] | null>(null);
+  const [explainedIngredients, setExplainedIngredients] = useState<
+    any[] | null
+  >(null);
   const [loadingExplanation, setLoadingExplanation] = useState(false);
+  const [headerAllergens, setHeaderAllergens] = useState<string[]>([]);
 
   const {
-    profile: userProfile,
-    profiles,
-    groups,
-    activeMode,
-    activeGroup,
-    switchProfile,
-    setActiveGroup,
-    clearActiveGroup,
+    activeTargetType,
+    activeTargetId,
+    activeTargetLabel,
+    getAllTargetOptions,
+    setActiveTarget,
     getActiveAllergens,
     isLoading: isContextLoading,
   } = useProfile();
@@ -73,6 +71,23 @@ export default function CameraScreen() {
     requestPermission();
   }, []);
 
+  useEffect(() => {
+    const loadHeaderAllergens = async () => {
+      const allergens = await getActiveAllergens();
+      setHeaderAllergens(allergens);
+    };
+
+    loadHeaderAllergens();
+  }, [activeTargetType, activeTargetLabel]);
+
+  const currentTargetTypeText =
+    activeTargetType === "group" ? "Group" : "Profile";
+
+  const switchOptions = useMemo(
+    () => getAllTargetOptions(),
+    [getAllTargetOptions],
+  );
+
   const resetScanner = () => {
     isProcessing.current = false;
     setScanned(false);
@@ -82,18 +97,10 @@ export default function CameraScreen() {
     setExplainedIngredients(null);
   };
 
-  const getCurrentDisplayMode = () => {
-    if (activeMode === "group" && activeGroup) {
-      return activeGroup.name;
-    }
-    return userProfile.name || "Guest";
-  };
-
-  const getCurrentHeaderAllergens = async () => {
-    return await getActiveAllergens();
-  };
-
-  const fetchIngredientsExplanation = async (ingredients: string, allergens: string[]) => {
+  const fetchIngredientsExplanation = async (
+    ingredients: string,
+    allergens: string[],
+  ) => {
     if (explainedIngredients) {
       setShowDetails(true);
       return;
@@ -107,7 +114,7 @@ export default function CameraScreen() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ingredients: ingredients,
+          ingredients,
           allergens: allergens.join(","),
         }),
       });
@@ -142,7 +149,7 @@ export default function CameraScreen() {
             const added = addItem({
               name,
               barcode,
-              scannedBy: getCurrentDisplayMode(),
+              scannedBy: activeTargetLabel,
               isSafe,
               expiryDate: undefined,
               ingredientsSummary: rawIngredients,
@@ -151,11 +158,11 @@ export default function CameraScreen() {
             if (added) {
               Alert.alert(
                 "Added",
-                `${name} has been added without an expiry date.`,
-                [{ text: "OK", onPress: resetScanner }]
+                `${name} has been added to ${activeTargetLabel}'s inventory without an expiry date.`,
+                [{ text: "OK", onPress: resetScanner }],
               );
             }
-          }
+          },
         },
         {
           text: "Save",
@@ -167,14 +174,17 @@ export default function CameraScreen() {
               if (!isNaN(parsedDate.getTime())) {
                 expiryTimestamp = parsedDate.getTime();
               } else {
-                Alert.alert("Invalid Date", "Could not read the date. Item added without an expiry date.");
+                Alert.alert(
+                  "Invalid Date",
+                  "Could not read the date. Item added without an expiry date.",
+                );
               }
             }
 
             const added = addItem({
               name,
               barcode,
-              scannedBy: getCurrentDisplayMode(),
+              scannedBy: activeTargetLabel,
               isSafe,
               expiryDate: expiryTimestamp,
               ingredientsSummary: rawIngredients,
@@ -182,23 +192,28 @@ export default function CameraScreen() {
 
             if (added) {
               const dateMsg = expiryTimestamp
-                ? `\nExpiry date set to: ${new Date(expiryTimestamp).toLocaleDateString()}`
+                ? `\nExpiry date set to: ${new Date(
+                    expiryTimestamp,
+                  ).toLocaleDateString()}`
                 : `\nNo expiry date set.`;
 
               Alert.alert(
                 "Added",
-                `${name} has been added to inventory.${dateMsg}`,
-                [{ text: "OK", onPress: resetScanner }]
+                `${name} has been added to ${activeTargetLabel}'s inventory.${dateMsg}`,
+                [{ text: "OK", onPress: resetScanner }],
               );
             }
           },
         },
       ],
-      "plain-text"
+      "plain-text",
     );
   };
 
-  const fetchAIRecommendation = async (unsafeProduct: string, allergens: string) => {
+  const fetchAIRecommendation = async (
+    unsafeProduct: string,
+    allergens: string,
+  ) => {
     setLoadingAI(true);
     setAlternatives(null);
 
@@ -210,7 +225,7 @@ export default function CameraScreen() {
         },
         body: JSON.stringify({
           product_name: unsafeProduct,
-          allergens: allergens,
+          allergens,
         }),
       });
 
@@ -235,7 +250,9 @@ export default function CameraScreen() {
     setScanned(true);
 
     try {
-      const res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${data}.json`);
+      const res = await fetch(
+        `https://world.openfoodfacts.org/api/v0/product/${data}.json`,
+      );
       const json = await res.json();
 
       if (json.status !== 1) {
@@ -250,19 +267,11 @@ export default function CameraScreen() {
       const ingredients = (product.ingredients_text || "").toLowerCase();
       const imageUrl = product.image_front_url || product.image_url || null;
 
-      const currentMode = getCurrentDisplayMode();
-
-      let matched: string[] = [];
-
-      if (activeMode === "profile" && currentMode === "Baby") {
-        matched = BABY_RULES.filter((r) => ingredients.includes(r));
-      } else {
-        const selectedAllergens = await getCurrentHeaderAllergens();
-        matched = selectedAllergens.filter((allergen) => {
-          const keywords = ALLERGEN_KEYWORDS[allergen] || [allergen];
-          return keywords.some((k) => ingredients.includes(k));
-        });
-      }
+      const selectedAllergens = await getActiveAllergens();
+      const matched = selectedAllergens.filter((allergen) => {
+        const keywords = ALLERGEN_KEYWORDS[allergen] || [allergen];
+        return keywords.some((k) => ingredients.includes(k));
+      });
 
       setScanResult({
         type: matched.length > 0 ? "unsafe" : "safe",
@@ -271,7 +280,7 @@ export default function CameraScreen() {
         ingredients,
         imageUrl,
         matchedAllergens: matched,
-        currentMode,
+        currentTargetLabel: activeTargetLabel,
       });
     } catch {
       Alert.alert("Error", "Network request failed");
@@ -279,47 +288,36 @@ export default function CameraScreen() {
     }
   };
 
-  if (!permission?.granted)
+  if (!permission?.granted) {
     return (
       <View style={styles.center}>
         <Text>Need Camera Permission</Text>
       </View>
     );
+  }
 
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <View style={{ flex: 1, marginRight: 10 }}>
-          <Text style={styles.headerLabel}>Current Mode</Text>
-          <Text style={styles.headerValue}>{getCurrentDisplayMode()}</Text>
+          <Text style={styles.headerLabel}>Current Target</Text>
+          <Text style={styles.headerValue}>
+            {activeTargetLabel} ({currentTargetTypeText})
+          </Text>
 
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             style={{ marginTop: 4 }}
           >
-            {activeMode === "group" && activeGroup ? (
-              activeGroup.members.length > 0 ? (
-                activeGroup.members.map((member) => (
-                  <View key={member} style={styles.allergenChip}>
-                    <Text style={styles.allergenChipText}>{member}</Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.headerSubtext}>No group members</Text>
-              )
-            ) : userProfile.allergens.length > 0 ? (
-              userProfile.allergens.map((a) => (
+            {headerAllergens.length > 0 ? (
+              headerAllergens.map((a) => (
                 <View key={a} style={styles.allergenChip}>
                   <Text style={styles.allergenChipText}>{a}</Text>
                 </View>
               ))
             ) : (
-              <Text style={styles.headerSubtext}>
-                {userProfile.name === "Baby"
-                  ? "Baby safety mode is active"
-                  : "No allergen restrictions"}
-              </Text>
+              <Text style={styles.headerSubtext}>No allergen restrictions</Text>
             )}
           </ScrollView>
         </View>
@@ -350,89 +348,94 @@ export default function CameraScreen() {
       {showProfiles && (
         <View style={styles.overlay}>
           <View style={styles.profileBox}>
-            <Text style={styles.profileTitle}>Select Member</Text>
+            <Text style={styles.profileTitle}>Select Target</Text>
 
-            {profiles.map((p) => (
-              <TouchableOpacity
-                key={p}
-                style={[
-                  styles.profileItem,
-                  activeMode === "profile" &&
-                    p === userProfile.name &&
-                    styles.profileItemActive,
-                ]}
-                onPress={async () => {
-                  setShowProfiles(false);
-                  await switchProfile(p);
-                }}
-              >
-                <Text
-                  style={[
-                    styles.profileText,
-                    activeMode === "profile" &&
-                      p === userProfile.name &&
-                      styles.profileTextActive,
-                  ]}
-                >
-                  {p} {activeMode === "profile" && p === userProfile.name ? "✓" : ""}
-                </Text>
-              </TouchableOpacity>
-            ))}
+            {switchOptions
+              .filter((option) => option.type === "profile")
+              .map((option) => {
+                const isActive =
+                  activeTargetType === "profile" &&
+                  activeTargetId === option.id;
 
-            {groups.length > 0 && (
-              <>
-                <Text style={localStyles.groupSectionTitle}>Groups</Text>
-                {groups.map((group) => (
+                return (
                   <TouchableOpacity
-                    key={group.id}
+                    key={`profile-${option.id}`}
                     style={[
                       styles.profileItem,
-                      activeMode === "group" &&
-                        activeGroup?.id === group.id &&
-                        styles.profileItemActive,
+                      isActive && styles.profileItemActive,
                     ]}
                     onPress={async () => {
                       setShowProfiles(false);
-                      await setActiveGroup(group.id);
+                      await setActiveTarget({
+                        type: option.type,
+                        id: option.id,
+                      });
                     }}
                   >
                     <Text
                       style={[
                         styles.profileText,
-                        activeMode === "group" &&
-                          activeGroup?.id === group.id &&
-                          styles.profileTextActive,
+                        isActive && styles.profileTextActive,
                       ]}
                     >
-                      {group.name}{" "}
-                      {activeMode === "group" && activeGroup?.id === group.id ? "✓" : ""}
+                      {option.label} {isActive ? "✓" : ""}
                     </Text>
-                    <Text style={localStyles.groupMemberText}>
-                      {group.members.join(", ")}
-                    </Text>
+                    <Text style={localStyles.optionTypeText}>Profile</Text>
                   </TouchableOpacity>
-                ))}
+                );
+              })}
 
-                {activeMode === "group" && (
-                  <TouchableOpacity
-                    style={[styles.profileItem, localStyles.useProfileModeButton]}
-                    onPress={async () => {
-                      setShowProfiles(false);
-                      await clearActiveGroup();
-                    }}
-                  >
-                    <Text style={[styles.profileText, localStyles.useProfileModeText]}>
-                      Use Current Profile Instead
-                    </Text>
-                  </TouchableOpacity>
-                )}
+            {switchOptions.some((option) => option.type === "group") && (
+              <>
+                <Text style={localStyles.groupSectionTitle}>Groups</Text>
+
+                {switchOptions
+                  .filter((option) => option.type === "group")
+                  .map((option) => {
+                    const isActive =
+                      activeTargetType === "group" &&
+                      activeTargetId === option.id;
+
+                    return (
+                      <TouchableOpacity
+                        key={`group-${option.id}`}
+                        style={[
+                          styles.profileItem,
+                          isActive && styles.profileItemActive,
+                        ]}
+                        onPress={async () => {
+                          setShowProfiles(false);
+                          await setActiveTarget({
+                            type: option.type,
+                            id: option.id,
+                          });
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.profileText,
+                            isActive && styles.profileTextActive,
+                          ]}
+                        >
+                          {option.label} {isActive ? "✓" : ""}
+                        </Text>
+                        <Text style={localStyles.groupMemberText}>
+                          {option.subtitle || "Group"}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
               </>
             )}
 
             <TouchableOpacity
               style={[
                 styles.profileItem,
-                { backgroundColor: "#F0FDF4", marginTop: 10, borderRadius: 10 },
+                {
+                  backgroundColor: "#F0FDF4",
+                  marginTop: 10,
+                  borderRadius: 10,
+                },
               ]}
               onPress={() => {
                 setShowProfiles(false);
@@ -467,12 +470,24 @@ export default function CameraScreen() {
       {scanResult && (
         <View style={styles.resultOverlay}>
           <View style={styles.resultCard}>
-            <Text style={scanResult.type === "safe" ? styles.safeTitle : styles.warningTitle}>
-              {scanResult.type === "safe" ? "Safe ✅" : `⚠️ Warning (${scanResult.currentMode})`}
+            <Text
+              style={
+                scanResult.type === "safe"
+                  ? styles.safeTitle
+                  : styles.warningTitle
+              }
+            >
+              {scanResult.type === "safe"
+                ? "Safe ✅"
+                : `⚠️ Warning (${scanResult.currentTargetLabel})`}
             </Text>
 
             {scanResult.imageUrl && (
-              <Image source={{ uri: scanResult.imageUrl }} style={styles.productImage} resizeMode="contain" />
+              <Image
+                source={{ uri: scanResult.imageUrl }}
+                style={styles.productImage}
+                resizeMode="contain"
+              />
             )}
 
             <Text style={styles.productName}>{scanResult.name}</Text>
@@ -487,34 +502,54 @@ export default function CameraScreen() {
 
             {showDetails ? (
               <View style={[styles.detailsBox, { maxHeight: 250 }]}>
-                <Text style={styles.ingredientsTitle}>🔬 Ingredients Explained:</Text>
+                <Text style={styles.ingredientsTitle}>
+                  🔬 Ingredients Explained:
+                </Text>
 
                 {loadingExplanation ? (
-                  <ActivityIndicator size="small" color="#3B82F6" style={{ marginVertical: 20 }} />
+                  <ActivityIndicator
+                    size="small"
+                    color="#3B82F6"
+                    style={{ marginVertical: 20 }}
+                  />
                 ) : explainedIngredients ? (
                   <ScrollView nestedScrollEnabled={true}>
                     {explainedIngredients.map((item, idx) => (
-                      <View key={idx} style={{
-                        marginBottom: 10,
-                        borderBottomWidth: 1,
-                        borderBottomColor: '#E5E7EB',
-                        paddingBottom: 8
-                      }}>
-                        <Text style={{
-                          fontWeight: 'bold',
-                          color: item.is_allergen ? '#DC2626' : '#1F2937',
-                          fontSize: 15
-                        }}>
-                          {item.is_allergen ? '⚠️ ' : '✅ '}{item.name}
+                      <View
+                        key={idx}
+                        style={{
+                          marginBottom: 10,
+                          borderBottomWidth: 1,
+                          borderBottomColor: "#E5E7EB",
+                          paddingBottom: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontWeight: "bold",
+                            color: item.is_allergen ? "#DC2626" : "#1F2937",
+                            fontSize: 15,
+                          }}
+                        >
+                          {item.is_allergen ? "⚠️ " : "✅ "}
+                          {item.name}
                         </Text>
-                        <Text style={{ color: '#4B5563', fontSize: 13, marginTop: 2 }}>
+                        <Text
+                          style={{
+                            color: "#4B5563",
+                            fontSize: 13,
+                            marginTop: 2,
+                          }}
+                        >
                           {item.explanation}
                         </Text>
                       </View>
                     ))}
                   </ScrollView>
                 ) : (
-                  <Text style={{ color: "gray" }}>Could not load explanation.</Text>
+                  <Text style={{ color: "gray" }}>
+                    Could not load explanation.
+                  </Text>
                 )}
 
                 <TouchableOpacity onPress={() => setShowDetails(false)}>
@@ -522,7 +557,14 @@ export default function CameraScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity onPress={() => fetchIngredientsExplanation(scanResult.ingredients, scanResult.matchedAllergens)}>
+              <TouchableOpacity
+                onPress={() =>
+                  fetchIngredientsExplanation(
+                    scanResult.ingredients,
+                    scanResult.matchedAllergens,
+                  )
+                }
+              >
                 <Text style={styles.toggleText}>See Details ▼</Text>
               </TouchableOpacity>
             )}
@@ -530,8 +572,16 @@ export default function CameraScreen() {
             <View style={styles.actionRow}>
               {scanResult.type === "unsafe" && (
                 <TouchableOpacity
-                  style={[styles.findAltButton, loadingAI && styles.buttonDisabled]}
-                  onPress={() => fetchAIRecommendation(scanResult.name, scanResult.matchedAllergens.join(","))}
+                  style={[
+                    styles.findAltButton,
+                    loadingAI && styles.buttonDisabled,
+                  ]}
+                  onPress={() =>
+                    fetchAIRecommendation(
+                      scanResult.name,
+                      scanResult.matchedAllergens.join(","),
+                    )
+                  }
                   disabled={loadingAI}
                 >
                   {loadingAI ? (
@@ -543,17 +593,25 @@ export default function CameraScreen() {
               )}
 
               <TouchableOpacity
-                style={scanResult.type === "safe" ? styles.addButtonSafe : styles.addButtonUnsafe}
+                style={
+                  scanResult.type === "safe"
+                    ? styles.addButtonSafe
+                    : styles.addButtonUnsafe
+                }
                 onPress={() =>
                   prepareAddToInventory(
                     scanResult.name,
                     scanResult.barcode,
                     scanResult.type === "safe",
-                    scanResult.ingredients
+                    scanResult.ingredients,
                   )
                 }
               >
-                <Text style={styles.buttonText}>{scanResult.type === "safe" ? "Add to Inventory" : "Still Add"}</Text>
+                <Text style={styles.buttonText}>
+                  {scanResult.type === "safe"
+                    ? "Add to Inventory"
+                    : "Still Add"}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -609,11 +667,9 @@ const localStyles = StyleSheet.create({
     color: "#6B7280",
     marginTop: 4,
   },
-  useProfileModeButton: {
-    marginTop: 10,
-    borderRadius: 10,
-  },
-  useProfileModeText: {
-    fontWeight: "bold",
+  optionTypeText: {
+    fontSize: 12,
+    color: "#6B7280",
+    marginTop: 4,
   },
 });

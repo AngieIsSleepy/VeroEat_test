@@ -33,6 +33,7 @@ export interface InventoryItem {
 type InventoryByProfile = Record<string, InventoryItem[]>;
 type RecallSettingsByProfile = Record<string, boolean>;
 type PushTokenByProfile = Record<string, string | null>;
+type InventoryByGroup = Record<string, InventoryItem[]>;
 
 type InventoryContextValue = {
   items: InventoryItem[];
@@ -67,22 +68,29 @@ type InventoryContextValue = {
 
   markAllItemsChecked: (checkedAt: number) => void;
 
-  refreshCurrentProfileFromBackend: () => Promise<void>;
-  runRecallCheckForCurrentProfile: () => Promise<void>;
+  refreshCurrentTargetFromBackend: () => Promise<void>;
+  runRecallCheckForCurrentTarget: () => Promise<void>;
 };
 
 const INVENTORY_STORAGE_KEY = "inventory_by_profile_v1";
+const GROUP_INVENTORY_STORAGE_KEY = "inventory_by_group_v1";
 const RECALL_SETTINGS_STORAGE_KEY = "recall_alert_settings_v1";
 const PUSH_TOKEN_STORAGE_KEY = "push_tokens_by_profile_v1";
 
 const InventoryContext = createContext<InventoryContextValue | null>(null);
 
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
-  const { profile } = useProfile();
+  const { profile, activeTargetType, activeTargetId, activeTargetLabel } =
+    useProfile();
+
   const currentProfileName = profile.name || "Guest";
+  const isGroupTarget = activeTargetType === "group";
 
   const [inventoryByProfile, setInventoryByProfile] =
     useState<InventoryByProfile>({});
+  const [inventoryByGroup, setInventoryByGroup] = useState<InventoryByGroup>(
+    {},
+  );
   const [recallSettingsByProfile, setRecallSettingsByProfile] =
     useState<RecallSettingsByProfile>({});
   const [pushTokenByProfile, setPushTokenByProfile] =
@@ -107,6 +115,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         const savedInventory = await AsyncStorage.getItem(
           INVENTORY_STORAGE_KEY,
         );
+        const savedGroupInventory = await AsyncStorage.getItem(
+          GROUP_INVENTORY_STORAGE_KEY,
+        );
         const savedRecallSettings = await AsyncStorage.getItem(
           RECALL_SETTINGS_STORAGE_KEY,
         );
@@ -116,6 +127,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
         if (savedInventory) {
           setInventoryByProfile(JSON.parse(savedInventory));
+        }
+
+        if (savedGroupInventory) {
+          setInventoryByGroup(JSON.parse(savedGroupInventory));
         }
 
         if (savedRecallSettings) {
@@ -146,6 +161,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!isHydrated) return;
     AsyncStorage.setItem(
+      GROUP_INVENTORY_STORAGE_KEY,
+      JSON.stringify(inventoryByGroup),
+    ).catch(console.error);
+  }, [inventoryByGroup, isHydrated]);
+
+  useEffect(() => {
+    if (!isHydrated) return;
+    AsyncStorage.setItem(
       RECALL_SETTINGS_STORAGE_KEY,
       JSON.stringify(recallSettingsByProfile),
     ).catch(console.error);
@@ -159,7 +182,18 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     ).catch(console.error);
   }, [pushTokenByProfile, isHydrated]);
 
-  const items = inventoryByProfile[currentProfileName] || [];
+  const items = useMemo(() => {
+    if (isGroupTarget) {
+      return inventoryByGroup[activeTargetId] || [];
+    }
+    return inventoryByProfile[currentProfileName] || [];
+  }, [
+    isGroupTarget,
+    inventoryByGroup,
+    inventoryByProfile,
+    activeTargetId,
+    currentProfileName,
+  ]);
 
   const addItem: InventoryContextValue["addItem"] = ({
     name,
@@ -179,7 +213,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       name,
       barcode,
       imageUrl,
-      scannedBy: scannedBy || currentProfileName,
+      scannedBy: scannedBy || activeTargetLabel,
       isSafe,
       expiryDate,
       ingredientsSummary,
@@ -191,32 +225,59 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       lastRecallCheckedAt: undefined,
     };
 
-    setInventoryByProfile((prev) => {
-      const currentItems = prev[currentProfileName] || [];
-      return {
-        ...prev,
-        [currentProfileName]: [newItem, ...currentItems],
-      };
-    });
+    if (isGroupTarget) {
+      setInventoryByGroup((prev) => {
+        const currentItems = prev[activeTargetId] || [];
+        return {
+          ...prev,
+          [activeTargetId]: [newItem, ...currentItems],
+        };
+      });
+    } else {
+      setInventoryByProfile((prev) => {
+        const currentItems = prev[currentProfileName] || [];
+        return {
+          ...prev,
+          [currentProfileName]: [newItem, ...currentItems],
+        };
+      });
+    }
 
     return true;
   };
 
   const removeItem = (id: string) => {
-    setInventoryByProfile((prev) => {
-      const currentItems = prev[currentProfileName] || [];
-      return {
-        ...prev,
-        [currentProfileName]: currentItems.filter((x) => x.id !== id),
-      };
-    });
+    if (isGroupTarget) {
+      setInventoryByGroup((prev) => {
+        const currentItems = prev[activeTargetId] || [];
+        return {
+          ...prev,
+          [activeTargetId]: currentItems.filter((x) => x.id !== id),
+        };
+      });
+    } else {
+      setInventoryByProfile((prev) => {
+        const currentItems = prev[currentProfileName] || [];
+        return {
+          ...prev,
+          [currentProfileName]: currentItems.filter((x) => x.id !== id),
+        };
+      });
+    }
   };
 
   const clear = () => {
-    setInventoryByProfile((prev) => ({
-      ...prev,
-      [currentProfileName]: [],
-    }));
+    if (isGroupTarget) {
+      setInventoryByGroup((prev) => ({
+        ...prev,
+        [activeTargetId]: [],
+      }));
+    } else {
+      setInventoryByProfile((prev) => ({
+        ...prev,
+        [currentProfileName]: [],
+      }));
+    }
   };
 
   const removeItemsByProfile = (profileName: string) => {
@@ -237,38 +298,73 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     id,
     recallData,
   ) => {
-    setInventoryByProfile((prev) => {
-      const currentItems = prev[currentProfileName] || [];
-      return {
-        ...prev,
-        [currentProfileName]: currentItems.map((item) =>
-          item.id === id
-            ? {
-                ...item,
-                recallStatus: recallData.recallStatus,
-                recallTitle: recallData.recallTitle ?? item.recallTitle,
-                recallReason: recallData.recallReason ?? item.recallReason,
-                recalledAt: recallData.recalledAt ?? item.recalledAt,
-                lastRecallCheckedAt:
-                  recallData.lastRecallCheckedAt ?? item.lastRecallCheckedAt,
-              }
-            : item,
-        ),
-      };
-    });
+    if (isGroupTarget) {
+      setInventoryByGroup((prev) => {
+        const currentItems = prev[activeTargetId] || [];
+        return {
+          ...prev,
+          [activeTargetId]: currentItems.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  recallStatus: recallData.recallStatus,
+                  recallTitle: recallData.recallTitle ?? item.recallTitle,
+                  recallReason: recallData.recallReason ?? item.recallReason,
+                  recalledAt: recallData.recalledAt ?? item.recalledAt,
+                  lastRecallCheckedAt:
+                    recallData.lastRecallCheckedAt ?? item.lastRecallCheckedAt,
+                }
+              : item,
+          ),
+        };
+      });
+    } else {
+      setInventoryByProfile((prev) => {
+        const currentItems = prev[currentProfileName] || [];
+        return {
+          ...prev,
+          [currentProfileName]: currentItems.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  recallStatus: recallData.recallStatus,
+                  recallTitle: recallData.recallTitle ?? item.recallTitle,
+                  recallReason: recallData.recallReason ?? item.recallReason,
+                  recalledAt: recallData.recalledAt ?? item.recalledAt,
+                  lastRecallCheckedAt:
+                    recallData.lastRecallCheckedAt ?? item.lastRecallCheckedAt,
+                }
+              : item,
+          ),
+        };
+      });
+    }
   };
 
   const markAllItemsChecked = (checkedAt: number) => {
-    setInventoryByProfile((prev) => {
-      const currentItems = prev[currentProfileName] || [];
-      return {
-        ...prev,
-        [currentProfileName]: currentItems.map((item) => ({
-          ...item,
-          lastRecallCheckedAt: checkedAt,
-        })),
-      };
-    });
+    if (isGroupTarget) {
+      setInventoryByGroup((prev) => {
+        const currentItems = prev[activeTargetId] || [];
+        return {
+          ...prev,
+          [activeTargetId]: currentItems.map((item) => ({
+            ...item,
+            lastRecallCheckedAt: checkedAt,
+          })),
+        };
+      });
+    } else {
+      setInventoryByProfile((prev) => {
+        const currentItems = prev[currentProfileName] || [];
+        return {
+          ...prev,
+          [currentProfileName]: currentItems.map((item) => ({
+            ...item,
+            lastRecallCheckedAt: checkedAt,
+          })),
+        };
+      });
+    }
   };
 
   const recallAlertsEnabled =
@@ -281,7 +377,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       ? null
       : pushTokenByProfile[currentProfileName];
 
-  const refreshCurrentProfileFromBackend = async () => {
+  const refreshCurrentTargetFromBackend = async () => {
+    if (isGroupTarget) return;
     if (!currentProfileName || currentProfileName === "Guest") return;
     if (shouldSkipBackendCalls()) return;
 
@@ -314,10 +411,19 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
       isApplyingRemoteDataRef.current = true;
 
-      setInventoryByProfile((prev) => ({
-        ...prev,
-        [currentProfileName]: remoteItems,
-      }));
+      setInventoryByProfile((prev) => {
+        const localItems = prev[currentProfileName] || [];
+
+        const nextItems =
+          remoteItems.length > 0 || localItems.length === 0
+            ? remoteItems
+            : localItems;
+
+        return {
+          ...prev,
+          [currentProfileName]: nextItems,
+        };
+      });
 
       setRecallSettingsByProfile((prev) => ({
         ...prev,
@@ -334,28 +440,32 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         isApplyingRemoteDataRef.current = false;
       }, 0);
     } catch (e) {
-      console.log("Failed to refresh current profile inventory/settings:", e);
+      console.log("Failed to refresh current target inventory/settings:", e);
       markBackendTemporarilyUnavailable();
     }
   };
 
-  const runRecallCheckForCurrentProfile = async () => {
+  const runRecallCheckForCurrentTarget = async () => {
+    if (isGroupTarget) {
+      const checkedAt = Date.now();
+      markAllItemsChecked(checkedAt);
+      return;
+    }
+
     if (!currentProfileName || currentProfileName === "Guest") return;
     if (shouldSkipBackendCalls()) return;
 
     try {
       await fetch(
-        `${API_BASE_URL}/recall/check/${encodeURIComponent(
-          currentProfileName,
-        )}`,
+        `${API_BASE_URL}/recall/check/${encodeURIComponent(currentProfileName)}`,
         {
           method: "POST",
         },
       );
 
-      await refreshCurrentProfileFromBackend();
+      await refreshCurrentTargetFromBackend();
     } catch (e) {
-      console.log("Failed to run recall check for current profile:", e);
+      console.log("Failed to run recall check for current target:", e);
       markBackendTemporarilyUnavailable();
     }
   };
@@ -363,6 +473,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   // 当前 profile 可用时，尝试获取 push token（每个 profile 本地记一份）
   useEffect(() => {
     if (!isHydrated) return;
+    if (isGroupTarget) return;
     if (!currentProfileName || currentProfileName === "Guest") return;
     if (pushTokenByProfile[currentProfileName] !== undefined) return;
 
@@ -376,19 +487,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     };
 
     setupPushToken();
-  }, [currentProfileName, isHydrated, pushTokenByProfile]);
+  }, [currentProfileName, isHydrated, pushTokenByProfile, isGroupTarget]);
 
   // 当前 profile 切换时，从后端拉 inventory 和 recall settings
   useEffect(() => {
     if (!isHydrated) return;
+    if (isGroupTarget) return;
     if (!currentProfileName || currentProfileName === "Guest") return;
 
-    refreshCurrentProfileFromBackend();
-  }, [currentProfileName, isHydrated]);
+    refreshCurrentTargetFromBackend();
+  }, [currentProfileName, isHydrated, isGroupTarget]);
 
   // 当前 profile 的 inventory 变化时，自动同步到后端
   useEffect(() => {
     if (!isHydrated) return;
+    if (isGroupTarget) return;
     if (!currentProfileName || currentProfileName === "Guest") return;
     if (isApplyingRemoteDataRef.current) return;
     if (shouldSkipBackendCalls()) return;
@@ -412,11 +525,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     };
 
     syncInventoryToBackend();
-  }, [items, currentProfileName, isHydrated]);
+  }, [items, currentProfileName, isHydrated, isGroupTarget]);
 
   // 当前 profile 的 recall 开关 / push token 变化时，自动同步到后端
   useEffect(() => {
     if (!isHydrated) return;
+    if (isGroupTarget) return;
     if (!currentProfileName || currentProfileName === "Guest") return;
     if (isApplyingRemoteDataRef.current) return;
     if (shouldSkipBackendCalls()) return;
@@ -441,7 +555,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     };
 
     syncRecallSettingsToBackend();
-  }, [recallAlertsEnabled, expoPushToken, currentProfileName, isHydrated]);
+  }, [
+    recallAlertsEnabled,
+    expoPushToken,
+    currentProfileName,
+    isHydrated,
+    isGroupTarget,
+  ]);
 
   const value = useMemo(
     () => ({
@@ -454,8 +574,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       setRecallAlertsEnabled,
       markItemRecall,
       markAllItemsChecked,
-      refreshCurrentProfileFromBackend,
-      runRecallCheckForCurrentProfile,
+      refreshCurrentTargetFromBackend,
+      runRecallCheckForCurrentTarget,
     }),
     [items, recallAlertsEnabled],
   );
