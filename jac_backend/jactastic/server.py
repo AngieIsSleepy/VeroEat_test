@@ -661,7 +661,10 @@ async def check_recall_for_all_users():
     }
 
 # ------------------AI---------------------------------------
-GLOBAL_GEMINI_API_KEY = "AI"
+import os
+from dotenv import load_dotenv
+load_dotenv()
+GLOBAL_GEMINI_API_KEY = os.getenv("GLOBAL_GEMINI_API_KEY")
 
 class AlternativeRequest(BaseModel):
     product_name: str
