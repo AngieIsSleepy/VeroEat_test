@@ -1,51 +1,85 @@
-# Welcome to your Expo app 👋
+# 🍎 VeroEat - Personal Food Safety Assistant
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**Scan • Decide • Stay Safe**
 
-## Get started
+VeroEat is a personal food safety assistant that helps users quickly decide whether a food product is safe to buy, eat, and keep. Instead of generic ratings, VeroEat provides a clear **Safe, Caution, or Avoid** recommendation based on your personalized allergy profile, dietary preferences, and real-time recall data.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## ✨ Key Features
 
-2. Start the app
+| Feature | Description |
+| :--- | :--- |
+| **Personalized Protection** | Detects ingredients and hidden allergen risks based on custom user profiles. |
+| **Smart Scanner** | Scans barcodes to fetch product ingredients and determine safety instantly. |
+| **Recall Risk Check** | Cross-references products against recall databases to prevent real safety risks. |
+| **Virtual Inventory** | Tracks expiration dates and sends reminders before your food expires. |
+| **Smart Alternatives** | Recommends safe alternative products if a scanned item triggers a warning. |
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## 🛠 Prerequisites
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+Before running the project locally, ensure you have the following installed:
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+* **Node.js** (LTS version recommended) & **npm**
+* **Python** (Version 3.10 or higher)
+* **Expo Go** application installed on your physical mobile device (iOS or Android)
 
-## Get a fresh project
+---
 
-When you're ready, run:
+## 🚀 Getting Started
 
-```bash
-npm run reset-project
-```
+VeroEat consists of a React Native frontend (Expo) and a Jac-powered AI backend. Follow the steps below to run both environments simultaneously.
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 1. Backend Setup (Jac & Python)
 
-## Learn more
+The backend handles the core logic, AI recommendations, and API communications.
 
-To learn more about developing your project with Expo, look at the following resources:
+1. Navigate to the backend directory:
+   `cd jac_backend/jactastic`
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+2. Install the required environment variable package:
+   `pip install python-dotenv`
 
-## Join the community
+3. Create a `.env` file in the `jac_backend/jactastic` directory and add your API key (do not use quotes):
+   `EXPO_PUBLIC_API_KEY=your_actual_api_key_here`
 
-Join our community of developers creating universal apps.
+4. Start the Jac backend server:
+   `python server.py`
+   
+   > **Important:** Keep this terminal running. If you modify any `.jac` logic files, you must restart this server for the changes to take effect.
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-# VeroEat
+---
+
+### 2. Frontend Setup (Expo)
+
+The frontend is built with Expo and requires a connection to your local backend.
+
+1. **Find your computer's local IPv4 address:**
+   * **Windows:** Open a new terminal and run `ipconfig`
+   * **Mac/Linux:** Open a new terminal and run `ifconfig`
+
+2. **Update the frontend API configuration:**
+   * Open the frontend code where the API calls are made.
+   * Replace the existing backend URL with your computer's IPv4 address (e.g., `http://192.168.1.XX:8000`).
+
+3. **Install frontend dependencies** (run this from the root project folder):
+   `npm install`
+
+4. **Start the Expo development server:**
+   `npx expo start`
+
+5. **Open the App:**
+   * Scan the QR code displayed in the terminal using your phone's camera (iOS) or the Expo Go app (Android).
+   * Ensure your phone and computer are connected to the **same Wi-Fi network**.
+
+---
+
+
+## 💡 Development Tips
+
+* **Live Reloading:** Frontend changes will sync automatically to your phone. If it gets stuck, press `r` in the Expo terminal to force a reload.
+* **Security:** Never commit your `.env` file to version control. Ensure `.env` is listed in your `.gitignore` file to protect your API keys.
+
+---
