@@ -3,7 +3,7 @@ import { ThemedView } from "@/components/themed-view";
 import { useInventory } from "@/context/inventory";
 import { useProfile } from "@/context/ProfileContext";
 import { Ionicons } from "@expo/vector-icons";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,20 +18,64 @@ export default function InventoryScreen() {
     useInventory();
 
   const {
+    profile,
     activeTargetType,
     activeTargetLabel,
     getAllTargetOptions,
     setActiveTarget,
+    getActiveAllergens,
   } = useProfile();
 
   const [checkingRecall, setCheckingRecall] = useState(false);
+  const [activeAllergens, setActiveAllergens] = useState<string[]>([]);
 
   const currentTargetTypeLabel =
     activeTargetType === "group" ? "Current group" : "Current profile";
 
+  useEffect(() => {
+    const loadAllergens = async () => {
+      if (activeTargetType === "profile") {
+        setActiveAllergens(profile.allergens || []);
+        return;
+      }
+
+      const allergens = await getActiveAllergens();
+      setActiveAllergens(allergens);
+    };
+
+    loadAllergens();
+  }, [
+    activeTargetType,
+    activeTargetLabel,
+    profile.allergens,
+    getActiveAllergens,
+  ]);
+
   const formatDate = (timestamp?: number) => {
     if (!timestamp) return "No Date";
     return new Date(timestamp).toLocaleDateString();
+  };
+
+  const ALLERGEN_KEYWORDS: Record<string, string[]> = {
+    peanuts: ["peanut", "peanuts", "groundnut"],
+    milk: ["milk", "whey", "casein", "butter", "cream", "cheese", "lactose"],
+    egg: ["egg", "eggs"],
+    gluten: ["gluten", "barley", "rye", "malt"],
+    soy: ["soy", "soybean"],
+    "tree nuts": ["almond", "cashew", "walnut", "pecan"],
+    fish: ["fish", "salmon", "tuna"],
+    "crustacean shellfish": ["shrimp", "crab", "lobster"],
+    wheat: ["wheat", "wheat flour"],
+    sesame: ["sesame", "sesame oil"],
+  };
+
+  const getMatchedAllergens = (summary?: string) => {
+    const text = (summary || "").toLowerCase();
+
+    return activeAllergens.filter((allergen) => {
+      const keywords = ALLERGEN_KEYWORDS[allergen] || [allergen];
+      return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+    });
   };
 
   const handleSwitchTarget = () => {
@@ -65,7 +109,16 @@ export default function InventoryScreen() {
     summary?: string,
     recallTitle?: string,
     recallReason?: string,
+    matchedAllergens: string[] = [],
+    isExpired?: boolean,
   ) => {
+    const allergyBlock =
+      matchedAllergens.length > 0
+        ? `\n\nAllergy Warning:\nContains or may contain: ${matchedAllergens.join(", ")}`
+        : "";
+
+    const expiredBlock = isExpired ? `\n\nEXPIRED❗️` : "";
+
     const recallBlock =
       recallTitle || recallReason
         ? `\n\nRecall Alert:\n${recallTitle || "Recalled product"}${
@@ -75,7 +128,7 @@ export default function InventoryScreen() {
 
     Alert.alert(
       name,
-      `${summary || "No ingredients summary available."}${recallBlock}`,
+      `${summary || "No ingredients summary available."}${allergyBlock}${expiredBlock}${recallBlock}`,
       [{ text: "Close", style: "cancel" }],
     );
   };
@@ -184,6 +237,10 @@ export default function InventoryScreen() {
               : null;
 
             const isRecalled = item.recallStatus === "recalled";
+            const matchedAllergens = getMatchedAllergens(
+              item.ingredientsSummary,
+            );
+            const hasAllergyWarning = matchedAllergens.length > 0;
 
             return (
               <Pressable
@@ -193,12 +250,27 @@ export default function InventoryScreen() {
                     item.ingredientsSummary,
                     item.recallTitle,
                     item.recallReason,
+                    matchedAllergens,
+                    isExpired,
                   )
                 }
               >
                 <ThemedView
                   style={[styles.card, isRecalled && styles.recalledCard]}
                 >
+                  {isExpired && (
+                    <View style={styles.expiredBanner}>
+                      <Ionicons
+                        name="alert-outline"
+                        size={14}
+                        color="#FFFFFF"
+                      />
+                      <ThemedText style={styles.expiredBannerText}>
+                        EXPIRED❗️
+                      </ThemedText>
+                    </View>
+                  )}
+
                   {isRecalled && (
                     <View style={styles.recallBanner}>
                       <Ionicons
@@ -229,9 +301,9 @@ export default function InventoryScreen() {
                             {
                               backgroundColor: isRecalled
                                 ? "#FEE2E2"
-                                : item.isSafe
-                                  ? "#DCFCE7"
-                                  : "#FEE2E2",
+                                : hasAllergyWarning
+                                  ? "#FEF3C7"
+                                  : "#DCFCE7",
                             },
                           ]}
                         >
@@ -241,17 +313,17 @@ export default function InventoryScreen() {
                               {
                                 color: isRecalled
                                   ? "#DC2626"
-                                  : item.isSafe
-                                    ? "#16A34A"
-                                    : "#EF4444",
+                                  : hasAllergyWarning
+                                    ? "#D97706"
+                                    : "#16A34A",
                               },
                             ]}
                           >
                             {isRecalled
                               ? "Recall"
-                              : item.isSafe
-                                ? "Safe"
-                                : "Warning"}
+                              : hasAllergyWarning
+                                ? "Warning"
+                                : "Safe"}
                           </ThemedText>
                         </View>
                       </View>
@@ -281,6 +353,20 @@ export default function InventoryScreen() {
                           <ThemedText style={styles.recallSubText}>
                             {" "}
                             Reason: {item.recallReason}
+                          </ThemedText>
+                        </View>
+                      )}
+
+                      {hasAllergyWarning && (
+                        <View style={styles.infoRow}>
+                          <Ionicons
+                            name="warning-outline"
+                            size={14}
+                            color="#EF4444"
+                          />
+                          <ThemedText style={styles.allergyWarningText}>
+                            {" "}
+                            Allergy warning: {matchedAllergens.join(", ")}
                           </ThemedText>
                         </View>
                       )}
@@ -460,6 +546,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     textTransform: "uppercase",
+  },
+  expiredBanner: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EF4444",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginBottom: 10,
+  },
+  expiredBannerText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  allergyWarningText: {
+    fontSize: 13,
+    color: "#EF4444",
+    fontWeight: "700",
   },
   row: {
     flexDirection: "row",

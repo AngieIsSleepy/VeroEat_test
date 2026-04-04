@@ -29,6 +29,71 @@ const ALLERGEN_KEYWORDS: Record<string, string[]> = {
   sesame: ["sesame", "sesame oil"],
 };
 
+const parseExpiryDate = (input: string): number | null => {
+  const value = input.trim();
+
+  // support YYYY-MM-DD
+  let match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+
+    date.setHours(23, 59, 59, 999);
+    return date.getTime();
+  }
+
+  // support MM/DD/YYYY
+  match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (match) {
+    const month = Number(match[1]);
+    const day = Number(match[2]);
+    const year = Number(match[3]);
+
+    const date = new Date(year, month - 1, day);
+    if (
+      date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day
+    ) {
+      return null;
+    }
+
+    date.setHours(23, 59, 59, 999);
+    return date.getTime();
+  }
+
+  return null;
+};
+
+const isPastExpiryDate = (timestamp: number) => {
+  const now = new Date();
+  const todayStart = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate(),
+    0,
+    0,
+    0,
+    0,
+  ).getTime();
+
+  return timestamp < todayStart;
+};
+
+const formatExpiryDate = (timestamp: number) => {
+  return new Date(timestamp).toLocaleDateString();
+};
+
 interface ScanResult {
   type: "safe" | "unsafe" | "not_found";
   name: string;
@@ -130,17 +195,14 @@ export default function CameraScreen() {
     }
   };
 
-  const prepareAddToInventory = async (
-    name: string,
-    barcode: string,
-    isSafe: boolean,
-    rawIngredients: string,
-  ) => {
+  const prepareAddToInventory = async (result: ScanResult) => {
+    const { name, barcode, ingredients, matchedAllergens, imageUrl } = result;
+    const isSafe = result.type === "safe";
     setScanResult(null);
 
     Alert.prompt(
       "Set Expiry Date?",
-      "Enter the exact expiration / best by date (e.g., MM/DD/YYYY or YYYY-MM-DD):",
+      "Enter expiration / best by date.\nUse YYYY-MM-DD or MM/DD/YYYY.",
       [
         {
           text: "Skip",
@@ -152,7 +214,7 @@ export default function CameraScreen() {
               scannedBy: activeTargetLabel,
               isSafe,
               expiryDate: undefined,
-              ingredientsSummary: rawIngredients,
+              ingredientsSummary: ingredients,
             });
 
             if (added) {
@@ -170,15 +232,27 @@ export default function CameraScreen() {
             let expiryTimestamp = undefined;
 
             if (dateString && dateString.trim() !== "") {
-              const parsedDate = new Date(dateString);
-              if (!isNaN(parsedDate.getTime())) {
-                expiryTimestamp = parsedDate.getTime();
-              } else {
+              const parsedTimestamp = parseExpiryDate(dateString);
+
+              if (parsedTimestamp === null) {
                 Alert.alert(
                   "Invalid Date",
-                  "Could not read the date. Item added without an expiry date.",
+                  "Please use YYYY-MM-DD or MM/DD/YYYY.",
                 );
+                setScanResult(result);
+                return;
               }
+
+              if (isPastExpiryDate(parsedTimestamp)) {
+                Alert.alert(
+                  "Invalid Date",
+                  "Expiration date cannot be earlier than today.",
+                );
+                setScanResult(result);
+                return;
+              }
+
+              expiryTimestamp = parsedTimestamp;
             }
 
             const added = addItem({
@@ -187,14 +261,12 @@ export default function CameraScreen() {
               scannedBy: activeTargetLabel,
               isSafe,
               expiryDate: expiryTimestamp,
-              ingredientsSummary: rawIngredients,
+              ingredientsSummary: ingredients,
             });
 
             if (added) {
               const dateMsg = expiryTimestamp
-                ? `\nExpiry date set to: ${new Date(
-                    expiryTimestamp,
-                  ).toLocaleDateString()}`
+                ? `\nExpiry date set to: ${formatExpiryDate(expiryTimestamp)}`
                 : `\nNo expiry date set.`;
 
               Alert.alert(
@@ -598,14 +670,7 @@ export default function CameraScreen() {
                     ? styles.addButtonSafe
                     : styles.addButtonUnsafe
                 }
-                onPress={() =>
-                  prepareAddToInventory(
-                    scanResult.name,
-                    scanResult.barcode,
-                    scanResult.type === "safe",
-                    scanResult.ingredients,
-                  )
-                }
+                onPress={() => prepareAddToInventory(scanResult)}
               >
                 <Text style={styles.buttonText}>
                   {scanResult.type === "safe"
